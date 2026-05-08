@@ -91,17 +91,23 @@ export function PatientProfile({ language }: PatientProfileProps) {
 
     
 const loadProfile = async () => {
-    try {
-      setLoading(true);
-      const profileData = await getPatientProfile(); 
-      setProfile(profileData);
-      setEditedProfile(profileData);
-    } catch (error) {
-      console.error('Lỗi khi tải hồ sơ:', error);
-    } finally {
-      setLoading(false);
-    }
+  try {
+    setLoading(true);
+
+    // ✅ Bỏ comment 3 dòng này
+    const profileData = await getPatientProfile();
+    setProfile(profileData);
+    setEditedProfile(profileData);
+
+    // ❌ Xóa 2 dòng mock dưới đây
+    // setProfile(mockProfile[language]);
+    // setEditedProfile(mockProfile[language]);
+  } catch (error) {
+    console.error('Lỗi khi tải hồ sơ:', error);
+  } finally {
+    setLoading(false);
   }
+};
 if (loading || !profile) {
     return (
       <div className="flex items-center justify-center p-20">
@@ -111,26 +117,23 @@ if (loading || !profile) {
     );
   }
   // API_CALL: Lưu thông tin profile
-  const handleSave = async () => {
-    try {
-      setLoading(true);
+const handleSave = async () => {
+  try {
+    setLoading(true);
 
-      // Uncomment khi có backend API
-      // await updatePatientProfile(editedProfile);
+    await updatePatientProfile(editedProfile); // ✅ bỏ comment dòng này
 
-      // Mock - xóa dòng này khi có API
-      setProfile(editedProfile);
-
-      setIsEditing(false);
-      setAlert({ message: t.updateSuccess, type: 'success' });
-      setTimeout(() => setAlert(null), 3000);
-    } catch (error) {
-      console.error('Error updating profile:', error);
-      setAlert({ message: 'Failed to update profile', type: 'error' });
-    } finally {
-      setLoading(false);
-    }
-  };
+    setProfile(editedProfile); // giữ lại để cập nhật UI
+    setIsEditing(false);
+    setAlert({ message: t.updateSuccess, type: 'success' });
+    setTimeout(() => setAlert(null), 3000);
+  } catch (error: any) {
+    console.error('Error updating profile:', error);
+    setAlert({ message: error.message || 'Cập nhật thất bại', type: 'error' });
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleCancel = () => {
     setEditedProfile(profile);

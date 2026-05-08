@@ -142,21 +142,28 @@ export default function App() {
   const t = translations[language];
 
 // Sửa hàm handleLogin của bạn thành thế này:
-const handleLogin = async (email: string, password: string) => {
+const handleLogin = async (email: string, password: string, remember: boolean) => {
   try {
-    const response = await login(email, password); // Gọi hàm login đã import ở trên
+    const response = await login(email, password, remember);
+
+    console.log('Login response:', response); // ← xem backend trả về gì
+
+    // Có thể backend trả response.user.id hoặc response.userId hoặc response.id
+    const userId = response.user?.id || response.userId || response.id || '';
     
-    if (response && response.token) {
-      localStorage.setItem('token', response.token);
-      setUserRole(response.user.role);
-      setCurrentUser({ 
-        name: response.user.fullName, 
-        email: response.user.email 
-      });
-      setActiveTab('dashboard'); // Đưa bạn vào trang chính
-    }
-  } catch (error) {
-    alert("Đăng nhập thất bại! Kiểm tra lại SQL Server hoặc định dạng Email/Password.");
+    localStorage.setItem('authToken', response.token);
+    localStorage.setItem('userId', userId); // ← đảm bảo đây là Guid đầy đủ
+    localStorage.setItem('userRole', response.user?.role || response.role);
+
+    setUserRole((response.user?.role || response.role) as UserRole);
+    setCurrentUser({ 
+      name: response.user?.name || response.name, 
+      email: response.user?.email || response.email 
+    });
+    setActiveTab('dashboard');
+  } catch (err) {
+    console.error('Login failed:', err);
+    throw err;
   }
 };
   const handleLogout = () => {

@@ -7,6 +7,7 @@
 
 // Base API URL - Thay đổi URL này khi deploy
 const API_BASE_URL = 'http://localhost:5041/api';
+// Hàm này giúp lấy ID của bệnh nhân đang thao tác
 
 // Helper function để gọi API
 const apiCall = async (endpoint: string, options: RequestInit = {}) => {
@@ -258,7 +259,49 @@ export const getPatientDetails = async (id: string) => {
  * Backend endpoint: GET /api/patients/profile
  */
 export const getPatientProfile = async () => {
-  return apiCall('/patients/profile');
+  const userId = localStorage.getItem('userId') || localStorage.getItem('user_id') || '';
+
+  console.log('userId từ localStorage:', userId); // ← debug xem giá trị thực
+
+  if (!userId) {
+    throw new Error('Chưa đăng nhập. Không tìm thấy userId trong localStorage.');
+  }
+
+  const response = await fetch(`http://localhost:5041/api/patients/profile?userId=${userId}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      'X-User-Id': userId,
+    }
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(err?.message || `Lỗi ${response.status}`);
+  }
+ 
+  const data = await response.json();
+ 
+  // Map từ C# PascalCase sang camelCase cho Frontend
+  return {
+    id: data.id,
+    fullName: data.fullName,
+    email: data.email,
+    phone: data.phone,
+    dateOfBirth: data.dateOfBirth,
+    gender: data.gender,
+    address: data.address,
+    idCard: data.idCard,
+    bloodType: data.bloodType,
+    allergies: data.allergies ? data.allergies.split(',').map((s: string) => s.trim()) : [],
+    chronicConditions: data.chronicConditions ? data.chronicConditions.split(',').map((s: string) => s.trim()) : [],
+    currentMedications: data.currentMedications ? data.currentMedications.split(',').map((s: string) => s.trim()) : [],
+    // Emergency contact chưa có trong DB — dùng default tạm
+    emergencyContact: {
+      name: '',
+      phone: '',
+      relationship: ''
+    }
+  };
 };
 
 /**
@@ -267,10 +310,27 @@ export const getPatientProfile = async () => {
  * Backend endpoint: PUT /api/patients/profile
  */
 export const updatePatientProfile = async (profileData: any) => {
-  return apiCall('/patients/profile', {
+  const userId = localStorage.getItem('userId') || '';
+ 
+  if (!userId) throw new Error('Chưa đăng nhập.');
+ 
+  const response = await fetch(`http://localhost:5041/api/patients/${userId}`, {
     method: 'PUT',
-    body: JSON.stringify(profileData),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      FullName: profileData.fullName,
+      Phone: profileData.phone,
+      Email: profileData.email,
+      Address: profileData.address,
+    })
   });
+ 
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(err?.message || 'Cập nhật thất bại');
+  }
+ 
+  return response.json();
 };
 
 // ==================== MEDICAL RECORDS ====================
@@ -435,15 +495,14 @@ export const bookAppointment = async (appointmentData: any) => {
  * Backend endpoint: GET /api/appointments/patient
  */
 export const getPatientAppointments = async () => {
-  return apiCall('/appointments/patient');
-
-  // Response structure:
-  // {
-  //   appointments: [
-  //     { id, department, doctor, date, timeSlot, status, createdAt }
-  //   ]
-  // }
+  const userId = localStorage.getItem('userId') || localStorage.getItem('user_id') || '';
+  
+  if (!userId) throw new Error('Chưa đăng nhập.');
+  
+  return apiCall(`/appointments/my?userId=${userId}`);
 };
+
+
 
 /**
  * API: Lấy lịch khám của bác sĩ
@@ -487,8 +546,10 @@ export const updateAppointmentStatus = async (appointmentId: string, status: str
  * Backend endpoint: DELETE /api/appointments/:id
  */
 export const cancelAppointment = async (appointmentId: string, reason?: string) => {
-  return apiCall(`/appointments/${appointmentId}`, {
-    method: 'DELETE',
+  const userId = localStorage.getItem('userId') || localStorage.getItem('user_id') || '';
+  
+  return apiCall(`/appointments/${appointmentId}/cancel?userId=${userId}`, {
+    method: 'PUT',
     body: JSON.stringify({ reason }),
   });
 };
@@ -513,7 +574,9 @@ export const getDoctorsByDepartment = async (departmentId: string) => {
   const params = new URLSearchParams({ department: departmentId });
   return apiCall(`/doctors?${params}`);
 };
-
+export const getAvailableSlots = async (doctorId: string, date: string): Promise<string[]> => {
+  return apiCall(`/appointments/available-slots?doctorId=${doctorId}&date=${date}`);
+};
 // ==================== PAYMENT & INSURANCE ====================
 
 /**

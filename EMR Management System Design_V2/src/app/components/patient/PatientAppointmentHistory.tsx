@@ -123,57 +123,56 @@ export function PatientAppointmentHistory({ language }: PatientAppointmentHistor
   useEffect(() => {
     loadAppointments();
   }, []);
-
+  useEffect(() => {
+    if (appointments.length > 0) console.log('apt.date raw:', appointments[0].date);
+  }, [appointments]);
   // API_CALL: Function để gọi API lấy lịch hẹn của bệnh nhân
+
   const loadAppointments = async () => {
     try {
       setLoading(true);
-
-      // Uncomment khi có backend API
-      // const response = await getPatientAppointments();
-      // setAppointments(response.appointments);
-
-      // Mock - xóa dòng này khi có API
-      setAppointments(mockAppointments[language]);
+      // Gọi API thật từ services/api.ts
+      const data = await getPatientAppointments(); 
+      // Controller trả về mảng appointments trực tiếp
+      setAppointments(data); 
     } catch (error) {
       console.error('Error loading appointments:', error);
+      // Nếu lỗi, có thể để mảng rỗng để không bị crash giao diện
+      setAppointments([]);
     } finally {
       setLoading(false);
     }
   };
-
   // API_CALL: Hủy lịch hẹn
-  const handleCancel = async (appointment: any) => {
-    // Check if cancellation is allowed (2 hours before)
-    const appointmentDateTime = new Date(`${appointment.date}T${appointment.timeSlot}`);
-    const now = new Date();
-    const hoursUntil = (appointmentDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+const handleCancel = async (appointment: any) => {
+  const [y, m, d] = appointment.date.split('-').map(Number);
+  const [h, min] = appointment.timeSlot.split(':').map(Number);
+  const appointmentDateTime = new Date(y, m - 1, d, h, min);
+  const now = new Date();
+  const hoursUntil = (appointmentDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
 
-    if (hoursUntil < 2 && hoursUntil > 0) {
-      alert(t.cannotCancel);
-      return;
-    }
+  if (hoursUntil < 2 && hoursUntil > 0) {
+    alert(t.cannotCancel);
+    return;
+  }
 
-    if (confirm(t.confirmCancel)) {
-      try {
-        setLoading(true);
-
-        // Uncomment khi có backend API
-        // await cancelAppointment(appointment.id);
-
-        // Mock - xóa dòng này khi có API
-        setAppointments(appointments.map(apt =>
+  if (confirm(t.confirmCancel)) {
+    try {
+      setLoading(true);
+      await cancelAppointment(appointment.id);
+      setAppointments(prev =>
+        prev.map(apt =>
           apt.id === appointment.id ? { ...apt, status: 'cancelled' } : apt
-        ));
-
-        alert(t.cancelSuccess);
-      } catch (error) {
-        console.error('Error cancelling appointment:', error);
-      } finally {
-        setLoading(false);
-      }
+        )
+      );
+      alert(t.cancelSuccess);
+    } catch (error: any) {
+      alert(error.message || 'Không thể hủy lịch hẹn.');
+    } finally {
+      setLoading(false);
     }
-  };
+  }
+};
 
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, { variant: any; label: string; className?: string }> = {
@@ -235,7 +234,11 @@ export function PatientAppointmentHistory({ language }: PatientAppointmentHistor
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Calendar className="h-4 w-4" />
-                        {new Date(apt.date).toLocaleDateString(language === 'en' ? 'en-US' : 'vi-VN')}
+                        {/* Thay vì dùng new Date().toLocaleDateString() hãy xử lý chuỗi trực tiếp */}
+                        {apt.date
+                        ? apt.date.split('T')[0].split('-').reverse().join('/')
+                        : '---'}
+                        {/* Kết quả: 2026-05-30 -> 30/05/2026 */}
                       </div>
                     </TableCell>
                     <TableCell>

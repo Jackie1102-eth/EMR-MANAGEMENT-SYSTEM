@@ -7,7 +7,6 @@ namespace ClinicAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    // [Authorize] // Sau này bạn hãy bỏ comment dòng này để bảo mật
     public class PatientsController : ControllerBase
     {
         private readonly EMRDbContext _context;
@@ -19,30 +18,92 @@ namespace ClinicAPI.Controllers
 
         // 1. Lấy danh sách toàn bộ bệnh nhân
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Patient>>> GetPatients()
+        public async Task<ActionResult<IEnumerable<Patient>>> GetPatients([FromQuery] string search = "")
         {
-            return await _context.Patients.ToListAsync();
+            var query = _context.Patients.AsQueryable();
+
+            if (!string.IsNullOrEmpty(search))
+            {
+                query = query.Where(p =>
+                    p.FullName.Contains(search) ||
+                    p.PatientCode.Contains(search) ||
+                    (p.Phone != null && p.Phone.Contains(search)));
+            }
+
+            return await query.OrderByDescending(p => p.CreatedAt).ToListAsync();
         }
 
-        // 2. Thêm bệnh nhân mới
-        [HttpPost]
-        public async Task<ActionResult<Patient>> CreatePatient(Patient patient)
-        {
-            _context.Patients.Add(patient);
-            await _context.SaveChangesAsync();
-            return Ok(patient);
-        }
+        // 2. Lấy profile bệnh nhân theo userId (cho trang "My Profile")
+        // Frontend gọi: GET /api/patients/profile
+        // userId được lấy từ localStorage ('userId') gửi qua header hoặc query
+[HttpGet("profile")]
+    public async Task<ActionResult<Patient>> GetProfile([FromQuery] string userId = "")
+    {
+        if (string.IsNullOrEmpty(userId))
+            userId = Request.Headers["X-User-Id"].FirstOrDefault() ?? "";
+
+        if (string.IsNullOrEmpty(userId) || !Guid.TryParse(userId, out Guid userGuid))
+            return BadRequest(new { message = "userId không hợp lệ." });
+
+        // ✅ Sửa: tìm theo UserId thay vì Id
+        var patient = await _context.Patients
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.Id == userGuid); // ← đổi p.Id → p.UserId
+
+        if (patient == null)
+            return NotFound(new { message = "Không tìm thấy hồ sơ bệnh nhân." });
+
+        return Ok(patient);
+}
+
+        // 3. Lấy chi tiết bệnh nhân theo ID
         [HttpGet("{id}")]
         public async Task<ActionResult<Patient>> GetPatient(Guid id)
         {
             var patient = await _context.Patients.FindAsync(id);
 
             if (patient == null)
-            {
-                return NotFound();
-            }
+                return NotFound(new { message = "Không tìm thấy bệnh nhân." });
 
-            return Ok(patient); // Backend phải trả về Ok kèm dữ liệu JSON
+            return Ok(patient);
+        }
+
+        // 4. Thêm bệnh nhân mới
+        [HttpPost]
+        public async Task<ActionResult<Patient>> CreatePatient(Patient patient)
+        {
+            try
+            {
+                patient.Id = Guid.NewGuid();
+                patient.CreatedAt = DateTime.Now;
+                _context.Patients.Add(patient);
+                await _context.SaveChangesAsync();
+                return Ok(patient);
+            }
+            catch (DbUpdateException ex)
+            {
+                var detail = ex.InnerException?.Message ?? ex.Message;
+                return StatusCode(500, new { message = "Lỗi lưu database.", detail });
+            }
+        }
+
+        // 5. Cập nhật thông tin bệnh nhân
+        [HttpPut("{id}")]
+        public async Task<IActionResult> UpdatePatient(Guid id, Patient updatedPatient)
+        {
+            var patient = await _context.Patients.FindAsync(id);
+            if (patient == null)
+                return NotFound(new { message = "Không tìm thấy bệnh nhân." });
+
+            // Chỉ cập nhật các field cho phép chỉnh sửa
+            patient.FullName = updatedPatient.FullName;
+            patient.Phone = updatedPatient.Phone;
+            patient.Email = updatedPatient.Email;
+            patient.Address = updatedPatient.Address;
+            patient.LastVisit = updatedPatient.LastVisit;
+
+            await _context.SaveChangesAsync();
+            return Ok(patient);
         }
     }
 }

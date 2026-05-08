@@ -9,7 +9,8 @@ import { Lock, Mail, AlertCircle } from "lucide-react";
 
 interface LoginFormProps {
   language: 'en' | 'vn';
-  onLogin: (email: string, password: string, remember: boolean) => void;
+  // Dòng 12 — sửa void → Promise<void>
+  onLogin: (email: string, password: string, remember: boolean) => Promise<void>;
   onForgotPassword: () => void;
   onRegister: () => void;
 }
@@ -58,29 +59,40 @@ export function LoginForm({ language, onLogin, onForgotPassword, onRegister }: L
   const [failedAttempts, setFailedAttempts] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
 
-const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError("");
+const handleSubmit = async (e: React.FormEvent) => {
+  e.preventDefault();
+  setError("");
 
-    if (isLocked) {
+  if (isLocked) { setError(t.accountLocked); return; }
+  if (!email)    { setError(t.emailRequired); return; }
+  if (!password) { setError(t.passwordRequired); return; }
+
+  try {
+    // Delegate hoàn toàn cho App.tsx — backend quyết định đúng/sai
+    await onLogin(email, password, remember);
+  } catch (err: any) {
+    const msg: string = err?.message ?? "";
+
+    // Backend trả "locked" → khóa UI 15 phút
+    if (msg.toLowerCase().includes("lock") || msg.toLowerCase().includes("khóa")) {
+      setIsLocked(true);
       setError(t.accountLocked);
+      setTimeout(() => { setIsLocked(false); setFailedAttempts(0); }, 15 * 60 * 1000);
       return;
     }
 
-    if (!email) {
-      setError(t.emailRequired);
-      return;
+    // Sai credentials → tăng counter
+    const newFailed = failedAttempts + 1;
+    setFailedAttempts(newFailed);
+    if (newFailed >= 5) {
+      setIsLocked(true);
+      setError(t.accountLocked);
+      setTimeout(() => { setIsLocked(false); setFailedAttempts(0); }, 15 * 60 * 1000);
+    } else {
+      setError(msg || `${t.invalidCredentials} (${5 - newFailed} ${t.attemptsRemaining})`);
     }
-
-    if (!password) {
-      setError(t.passwordRequired);
-      return;
-    }
-
-    // XÓA HẾT CÁC DÒNG IF EMAIL === "admin@emr.com"...
-    // CHỈ GỌI DUY NHẤT DÒNG NÀY:
-    onLogin(email, password, remember);
-  };
+  }
+};
 
   return (
     <Card className="w-full max-w-md">

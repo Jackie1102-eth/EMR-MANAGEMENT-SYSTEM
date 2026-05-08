@@ -17,7 +17,7 @@ namespace ClinicAPI.Models
         // Logic khóa tài khoản sau 5 lần sai
         public int FailedLoginAttempts { get; set; } = 0;
         public DateTime? LockedUntil { get; set; }
-        
+        public string? Department { get; set; }
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
     }
