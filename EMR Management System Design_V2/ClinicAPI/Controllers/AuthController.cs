@@ -28,6 +28,13 @@ public async Task<IActionResult> Login([FromBody] LoginRequest request)
     var user = await _context.Users.FirstOrDefaultAsync(u => u.Email == request.Email);
     if (user == null) return Unauthorized(new { message = "Email không tồn tại" });
 
+    // --- THÊM ĐOẠN NÀY ĐỂ NÚT LOCK CÓ TÁC DỤNG ---
+    if (user.Status == "locked")
+    {
+        return StatusCode(403, new { message = "Tài khoản đã bị Quản trị viên khóa vĩnh viễn." });
+    }
+    // --------------------------------------------
+
     if (user.LockedUntil > DateTime.Now)
         return BadRequest(new { message = $"Tài khoản bị khóa đến {user.LockedUntil}" });
 
@@ -52,7 +59,16 @@ public async Task<IActionResult> Login([FromBody] LoginRequest request)
             await _context.SaveChangesAsync();
 
             var token = GenerateJwtToken(user);
-            return Ok(new { token, user = new { user.Id, user.FullName, user.Role } });
+
+            // Trả về kèm theo thông tin cơ bản để Frontend hiển thị lên giao diện
+            return Ok(new { 
+                token, 
+                user = new { 
+                    id = user.Id, 
+                    fullName = user.FullName, // Để hiện "Quản Trị Viên" hoặc tên bác sĩ
+                    role = user.Role          // Để Frontend biết ẩn/hiện menu
+                } 
+            });
         }
 
         private string GenerateJwtToken(User user)

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState , useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
@@ -80,7 +80,7 @@ const mockMedicines = {
   ]
 };
 
-export function PrescriptionManagement({ language, patientId = "P001" }: PrescriptionManagementProps) {
+export function PrescriptionManagement({ language, patientId }: PrescriptionManagementProps) {
   const t = translations[language];
   const [medications, setMedications] = useState<any[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -91,7 +91,9 @@ export function PrescriptionManagement({ language, patientId = "P001" }: Prescri
   const [duration, setDuration] = useState("");
   const [warnings, setWarnings] = useState<string[]>([]);
   const [alert, setAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-
+// Thêm vào khoảng dòng 95
+    const [currentPatientId, setCurrentPatientId] = useState(patientId || "");
+    const [prescriptionNotes, setPrescriptionNotes] = useState("");
   const medicines = mockMedicines[language];
   const filteredMedicines = medicines.filter(m =>
     m.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -142,10 +144,73 @@ export function PrescriptionManagement({ language, patientId = "P001" }: Prescri
     setTimeout(() => setAlert(null), 3000);
   };
 
-  const handleSavePrescription = () => {
-    setAlert({ message: t.prescriptionSaved, type: 'success' });
+// ============================================================
+// THAY THẾ hàm handleSavePrescription (từ dòng 147 đến ~200)
+// ============================================================
+
+const GUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const handleSavePrescription = async () => {
+  // FIX 1: Validate GUID đúng format (36 ký tự) thay vì check length < 30
+  if (!currentPatientId || !GUID_REGEX.test(currentPatientId)) {
+    setAlert({ message: "Mã bệnh nhân phải đúng định dạng GUID (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)", type: 'error' });
+    setTimeout(() => setAlert(null), 4000);
+    return;
+  }
+
+  if (medications.length === 0) {
+    setAlert({ message: "Vui lòng thêm ít nhất một loại thuốc", type: 'error' });
     setTimeout(() => setAlert(null), 3000);
+    return;
+  }
+
+  // FIX 2: Thử nhiều key localStorage phổ biến
+  const doctorId = localStorage.getItem('userId') 
+    || localStorage.getItem('doctorId') 
+    || localStorage.getItem('user_id')
+    || '00000000-0000-0000-0000-000000000001'; // fallback GUID hợp lệ
+
+  const payload = {
+    PatientId: currentPatientId,
+    DoctorId: doctorId,
+    PrescriptionDate: new Date().toISOString(),
+    Notes: prescriptionNotes || "",
+    MedicationDetails: medications.map(m => ({
+      MedicineName: m.name,
+      Dosage: m.dosage,
+      Frequency: String(m.frequency),
+      Duration: String(m.duration)
+    }))
   };
+
+  try {
+    const response = await fetch('http://localhost:5041/api/prescriptions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (response.ok) {
+      setAlert({ message: "Đã lưu đơn thuốc thành công!", type: 'success' });
+      setMedications([]);
+      setPrescriptionNotes("");
+      setWarnings([]);
+      setTimeout(() => setAlert(null), 3000);
+    } else {
+      // FIX 3: Đọc message lỗi từ server để debug chính xác
+      let errorMsg = `Lỗi ${response.status}`;
+      try {
+        const errData = await response.json();
+        errorMsg = errData.detail || errData.message || errorMsg;
+      } catch {
+        errorMsg = await response.text();
+      }
+      setAlert({ message: `Lỗi: ${errorMsg}`, type: 'error' });
+    }
+  } catch {
+    setAlert({ message: "Không thể kết nối đến server. Kiểm tra backend có đang chạy không.", type: 'error' });
+  }
+};
 
   return (
     <div className="space-y-6">
@@ -176,15 +241,29 @@ export function PrescriptionManagement({ language, patientId = "P001" }: Prescri
           <CardDescription>{t.description}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>{t.patientId}</Label>
-            <Input value={patientId} disabled />
-          </div>
-
-          <Button onClick={() => setIsDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            {t.addMedication}
-          </Button>
+            <div className="space-y-2">
+              <Label>{t.patientId}</Label>
+              <Input 
+                value={currentPatientId} 
+                onChange={(e) => setCurrentPatientId(e.target.value)} 
+                placeholder="Nhập mã GUID bệnh nhân..." 
+              />
+            </div>
+              <div className="flex gap-2">
+                <Button onClick={() => setIsDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  {t.addMedication}
+                </Button>
+                
+                {/* Nút Save mới thêm vào */}
+                <Button 
+                  onClick={handleSavePrescription} 
+                  variant="outline" 
+                  className="bg-blue-600 text-white hover:bg-blue-700"
+                >
+                  Lưu Đơn Thuốc
+                </Button>
+              </div>
 
           {medications.length > 0 && (
             <div className="rounded-md border">

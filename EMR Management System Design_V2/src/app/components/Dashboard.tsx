@@ -45,7 +45,7 @@ const translations = {
 
 export function Dashboard({ language }: DashboardProps) {
   const t = translations[language];
-  
+  const [realAlerts, setRealAlerts] = useState<{ type: string; message_vn: string; message_en: string }[]>([]);
   // Khai báo các State bên trong hàm Dashboard
   const [recentPatients, setRecentPatients] = useState<string[]>([]);
   const [realStats, setRealStats] = useState({
@@ -54,42 +54,71 @@ export function Dashboard({ language }: DashboardProps) {
     records: "0"
   });
 
-  useEffect(() => {
-    const loadDashboardData = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const response = await fetch('http://localhost:5041/api/patients', {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          
-          // Cập nhật 4 hoạt động mới nhất
-          const names = data.slice(0, 4).map((p: any) => 
-            language === 'vn' ? `Bệnh nhân mới đăng ký: ${p.fullName}` : `New patient registered: ${p.fullName}`
-          );
-          setRecentPatients(names);
-          
-          // Cập nhật số lượng tổng (con số 4 từ SQL)
-          setRealStats(prev => ({ 
-            ...prev, 
-            totalPatients: data.length.toString() 
-          }));
-        }
-      } catch (error) {
-        console.error("Lỗi lấy dữ liệu Dashboard:", error);
+// ============================================================
+// THAY THẾ toàn bộ khối useEffect trong Dashboard.tsx
+// (từ dòng useEffect(() => { ... }, [language]);)
+// ============================================================
+
+useEffect(() => {
+  const loadDashboardData = async () => {
+    const token = localStorage.getItem('token');
+    const headers = { 'Authorization': `Bearer ${token}` };
+
+    try {
+      // Fetch song song 3 API cùng lúc cho nhanh
+const [patientsRes, recordsRes, appointmentsRes, alertsRes] = await Promise.allSettled([
+  fetch('http://localhost:5041/api/patients', { headers }),
+  fetch('http://localhost:5041/api/medicalrecords', { headers }),
+  fetch('http://localhost:5041/api/appointments/today', { headers }),
+  fetch('http://localhost:5041/api/dashboard/alerts', { headers }),  // <-- thêm dòng này
+]);
+if (alertsRes.status === 'fulfilled' && alertsRes.value.ok) {
+  const data = await alertsRes.value.json();
+  setRealAlerts(data);
+}
+
+
+      // --- Patients ---
+      if (patientsRes.status === 'fulfilled' && patientsRes.value.ok) {
+        const data = await patientsRes.value.json();
+        const names = data.slice(0, 4).map((p: any) =>
+          language === 'vn'
+            ? `Bệnh nhân mới đăng ký: ${p.fullName}`
+            : `New patient registered: ${p.fullName}`
+        );
+        setRecentPatients(names);
+        setRealStats(prev => ({ ...prev, totalPatients: data.length.toString() }));
       }
-    };
-    loadDashboardData();
-  }, [language]); // Thêm language để cập nhật câu thông báo khi đổi ngôn ngữ
+
+      // --- Medical Records ---
+      if (recordsRes.status === 'fulfilled' && recordsRes.value.ok) {
+        const data = await recordsRes.value.json();
+        const count = Array.isArray(data) ? data.length : (data.count ?? 0);
+        setRealStats(prev => ({ ...prev, records: count.toString() }));
+      }
+
+      // --- Today's Appointments ---
+      if (appointmentsRes.status === 'fulfilled' && appointmentsRes.value.ok) {
+        const data = await appointmentsRes.value.json();
+        setRealStats(prev => ({ ...prev, appointments: (data.count ?? 0).toString() }));
+      }
+
+    } catch (error) {
+      console.error("Lỗi lấy dữ liệu Dashboard:", error);
+    }
+  };
+
+  loadDashboardData();
+}, [language]);// Thêm language để cập nhật câu thông báo khi đổi ngôn ngữ
   // SỬA: Cấu trúc lại mảng stats để dùng dữ liệu thật
-  const stats = [
-    { title: t.patients, value: realStats.totalPatients, icon: Users, trend: "+0%", color: "text-blue-600" },
-    { title: t.appointments, value: "0", icon: Calendar, trend: "+0%", color: "text-green-600" },
-    { title: t.records, value: "0", icon: FileText, trend: "+0%", color: "text-purple-600" },
-    { title: t.aiScreenings, value: "0", icon: Activity, trend: "+0%", color: "text-orange-600" }
-  ];
+const stats = [
+  { title: t.patients,     value: realStats.totalPatients, icon: Users,    trend: "+0%", color: "text-blue-600"   },
+  { title: t.appointments, value: realStats.appointments,  icon: Calendar, trend: "+0%", color: "text-green-600"  },
+  { title: t.records,      value: realStats.records,       icon: FileText, trend: "+0%", color: "text-purple-600" },
+  { title: t.aiScreenings, value: "0",                     icon: Activity, trend: "+0%", color: "text-orange-600" },
+];
+
+
 
 
 
@@ -150,12 +179,20 @@ export function Dashboard({ language }: DashboardProps) {
           </CardHeader>
           <CardContent>
             <div className="space-y-3">
-              {t.alerts.map((alert, index) => (
-                <div key={index} className="flex items-start gap-3 p-3 bg-white rounded-md border border-orange-200">
-                  <AlertCircle className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm">{alert}</p>
-                </div>
-              ))}
+                {realAlerts.length > 0 ? (
+                  realAlerts.map((alert, index) => (
+                    <div key={index} className="flex items-start gap-3 p-3 bg-white rounded-md border border-orange-200">
+                      <AlertCircle className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
+                        alert.type === 'warning' ? 'text-red-600' : 
+                        alert.type === 'success' ? 'text-green-600' : 'text-orange-600'
+                      }`} />
+                      <p className="text-sm">{language === 'vn' ? alert.message_vn : alert.message_en}</p>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">Đang tải cảnh báo...</p>
+                )}
+
             </div>
           </CardContent>
         </Card>

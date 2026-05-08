@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../ui/card";
 import { Input } from "../ui/input";
 import { Button } from "../ui/button";
@@ -6,7 +6,7 @@ import { Label } from "../ui/label";
 import { Textarea } from "../ui/textarea";
 import { Badge } from "../ui/badge";
 import { Alert, AlertDescription } from "../ui/alert";
-import { FileText, Upload, Brain, Lock, AlertCircle } from "lucide-react";
+import { FileText, Upload, Brain, Lock } from "lucide-react";
 
 interface MedicalRecordFormProps {
   language: 'en' | 'vn';
@@ -73,45 +73,205 @@ const mockAISuggestions = {
   }
 };
 
-export function MedicalRecordForm({ language, patientId = "P001" }: MedicalRecordFormProps) {
+// Key để lưu draft data vào sessionStorage (tồn tại trong tab, mất khi đóng tab)
+const SESSION_DRAFT_KEY = "emr_form_draft";
+
+export function MedicalRecordForm({ language, patientId }: MedicalRecordFormProps) {
   const t = translations[language];
-  const [formData, setFormData] = useState({
-    patientId,
-    symptoms: "",
-    diagnosis: "",
-    conclusion: ""
-  });
+
+  // --- KHỞI TẠO STATE TỪ SESSION STORAGE (giữ data khi chuyển tab) ---
+  const getInitialFormData = () => {
+    try {
+      const saved = sessionStorage.getItem(SESSION_DRAFT_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          patientId: patientId || parsed.patientId || "",
+          symptoms: parsed.symptoms || "",
+          diagnosis: parsed.diagnosis || "",
+          conclusion: parsed.conclusion || ""
+        };
+      }
+    } catch (_) {}
+    return {
+      patientId: patientId || "",
+      symptoms: "",
+      diagnosis: "",
+      conclusion: ""
+    };
+  };
+
+  const [formData, setFormData] = useState(getInitialFormData);
   const [files, setFiles] = useState<string[]>([]);
   const [aiSuggestions, setAiSuggestions] = useState<any>(null);
-  const [isLocked, setIsLocked] = useState(false);
+
+  // Đọc lock state ngay khi khởi tạo — giữ trạng thái lock khi chuyển tab
+  const getInitialLocked = () => {
+    try {
+      const draft = sessionStorage.getItem(SESSION_DRAFT_KEY);
+      const pid = patientId || (draft ? JSON.parse(draft).patientId : "");
+      if (pid) return sessionStorage.getItem(`locked_${pid}`) === 'true';
+    } catch (_) {}
+    return false;
+  };
+  const [isLocked, setIsLocked] = useState(getInitialLocked);
   const [aiLoading, setAiLoading] = useState(false);
   const [alert, setAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  
+  // Ref để track lần đầu load dữ liệu từ server (tránh fetch lại nhiều lần)
+  const hasFetchedRef = useRef<string | null>(null);
+
+  // --- FIX 1: AUTO-SAVE DRAFT VÀO SESSION STORAGE KHI FORM THAY ĐỔI ---
+  // Data sẽ được giữ lại khi chuyển tab, mất khi đóng trình duyệt
+  useEffect(() => {
+    // Không lưu draft khi đang locked (tránh ghi đè data đã finalize)
+    if (!isLocked) {
+      try {
+        sessionStorage.setItem(SESSION_DRAFT_KEY, JSON.stringify(formData));
+      } catch (_) {}
+    }
+  }, [formData, isLocked]);
+
+  // --- FIX 2: CHỈ CHECK LOCK VÀ FETCH DATA KHI PATIENT ID HỢP LỆ VÀ THAY ĐỔI ---
+  // Tách logic "check lock" và "fetch server" khỏi nhau, không auto-lock khi gõ ID
+  useEffect(() => {
+    const pid = formData.patientId;
+    
+    // Bỏ qua nếu ID chưa đủ dài hoặc đã fetch rồi
+    if (!pid || pid.length < 30) {
+      setIsLocked(false);
+      return;
+    }
+    if (hasFetchedRef.current === pid) return;
+    hasFetchedRef.current = pid;
+
+    const loadPatientData = async () => {
+      // KHÔNG tự động lock ở đây — chỉ lock khi user bấm nút "Finalize & Lock"
+      // Chỉ restore lock state nếu user đã từng finalize trong session này
+      const savedLockStatus = sessionStorage.getItem(`locked_${pid}`);
+      if (savedLockStatus === 'true') {
+        setIsLocked(true);
+      }
+
+      // Gọi API lấy dữ liệu cũ từ server
+      try {
+        const response = await fetch(`http://localhost:5041/api/medicalrecords/patient/${pid}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data && data.length > 0) {
+            const lastRecord = data[0];
+            // Chỉ điền nếu field đang trống (không ghi đè data user đang nhập)
+            setFormData(prev => ({
+              ...prev,
+              symptoms: prev.symptoms || lastRecord.symptoms || "",
+              diagnosis: prev.diagnosis || lastRecord.diagnosis || "",
+              conclusion: prev.conclusion || lastRecord.treatmentPlan || ""
+            }));
+          }
+        }
+      } catch (error) {
+        // Server lỗi → giữ nguyên data hiện tại
+        console.error("Server error - keeping current data.");
+      }
+    };
+
+    loadPatientData();
+  }, [formData.patientId]);
+
+  const applyDiagnosis = (suggestion: string) => {
+    if (!isLocked) {
+      setFormData(prev => ({ ...prev, diagnosis: suggestion }));
+    }
+  };
 
   const handleGetAiSuggestions = () => {
     setAiLoading(true);
     setTimeout(() => {
       setAiSuggestions(mockAISuggestions[language]);
       setAiLoading(false);
-    }, 2000);
+    }, 1500);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const fileList = e.target.files;
     if (fileList) {
       const newFiles = Array.from(fileList).map(f => f.name);
-      setFiles([...files, ...newFiles]);
+      setFiles(prev => [...prev, ...newFiles]);
     }
   };
 
-  const handleSave = () => {
-    setAlert({ message: t.successSaved, type: 'success' });
-    setTimeout(() => setAlert(null), 3000);
+  const handleSave = async () => {
+    // Validate Patient ID trước
+    if (!formData.patientId || formData.patientId.length < 30) {
+      setAlert({ message: language === 'en' ? "Please enter a valid Patient ID (GUID)" : "Vui lòng nhập Mã Bệnh Nhân hợp lệ (GUID)", type: 'error' });
+      return false;
+    }
+
+    // Lấy DoctorId — nếu chưa login thì dùng empty GUID, không block nút Save
+    const doctorIdStr = localStorage.getItem('userId') || '00000000-0000-0000-0000-000000000000';
+
+    const recordData = {
+      PatientId: formData.patientId,
+      DoctorId: doctorIdStr,
+      Symptoms: formData.symptoms,
+      Diagnosis: formData.diagnosis,
+      TreatmentPlan: formData.conclusion,
+      Notes: ""
+    };
+
+    try {
+      const response = await fetch('http://localhost:5041/api/medicalrecords', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(recordData)
+      });
+
+      if (response.ok) {
+        setAlert({ message: t.successSaved, type: 'success' });
+        setTimeout(() => setAlert(null), 3000);
+        return true;
+      }
+
+      // Hiện lỗi chi tiết từ server
+      const errData = await response.json().catch(() => null);
+      const errMsg = errData?.message || errData?.detail || `Server error: ${response.status}`;
+      setAlert({ message: errMsg, type: 'error' });
+      return false;
+    } catch (error) {
+      setAlert({ 
+        message: language === 'en' 
+          ? "Cannot connect to server. Is the backend running?" 
+          : "Không kết nối được server. Backend có đang chạy không?", 
+        type: 'error' 
+      });
+      return false;
+    }
   };
 
-  const handleFinalize = () => {
-    setIsLocked(true);
-    setAlert({ message: t.successFinalized, type: 'success' });
-    setTimeout(() => setAlert(null), 3000);
+const handleFinalize = () => {
+  setIsLocked(true); // Cập nhật giao diện ngay [cite: 25]
+  localStorage.setItem(`locked_${formData.patientId}`, 'true'); // Lưu trạng thái vào máy [cite: 25]
+  setAlert({ message: t.successFinalized, type: 'success' }); // Hiển thị thông báo [cite: 26]
+};
+  const handleUnlock = () => {
+    setIsLocked(false);
+    sessionStorage.removeItem(`locked_${formData.patientId}`);
+    setAlert({ message: language === 'en' ? "Record unlocked" : "Đã mở khóa bệnh án", type: 'success' });
+    setTimeout(() => setAlert(null), 2000);
+  };
+
+  // --- FIX 3: XÓA DRAFT KHI ĐỔI PATIENT ID (tránh data lẫn lộn giữa các bệnh nhân) ---
+  const handlePatientIdChange = (newId: string) => {
+    if (newId !== formData.patientId) {
+      // Reset fetch tracker để có thể fetch data của bệnh nhân mới
+      hasFetchedRef.current = null;
+      setIsLocked(false);
+      setAiSuggestions(null);
+      // Reset form, xóa draft cũ
+      const freshData = { patientId: newId, symptoms: "", diagnosis: "", conclusion: "" };
+      setFormData(freshData);
+      sessionStorage.setItem(SESSION_DRAFT_KEY, JSON.stringify(freshData));
+    }
   };
 
   return (
@@ -142,7 +302,12 @@ export function MedicalRecordForm({ language, patientId = "P001" }: MedicalRecor
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>{t.patientId}</Label>
-              <Input value={formData.patientId} disabled />
+              <Input
+                value={formData.patientId}
+                disabled={isLocked}
+                onChange={(e) => handlePatientIdChange(e.target.value)}
+                placeholder="Nhập mã Guid bệnh nhân..."
+              />
             </div>
           </div>
 
@@ -150,7 +315,7 @@ export function MedicalRecordForm({ language, patientId = "P001" }: MedicalRecor
             <Label>{t.symptoms}</Label>
             <Textarea
               value={formData.symptoms}
-              onChange={(e) => setFormData({ ...formData, symptoms: e.target.value })}
+              onChange={(e) => setFormData(prev => ({ ...prev, symptoms: e.target.value }))}
               rows={4}
               disabled={isLocked}
               placeholder={language === 'en' ? 'Describe patient symptoms...' : 'Mô tả triệu chứng bệnh nhân...'}
@@ -181,7 +346,14 @@ export function MedicalRecordForm({ language, patientId = "P001" }: MedicalRecor
                   <div className="text-sm font-medium mb-2">{t.possibleDiagnoses}:</div>
                   <div className="flex flex-wrap gap-2">
                     {aiSuggestions.diagnoses.map((d: string, i: number) => (
-                      <Badge key={i} variant="outline">{d}</Badge>
+                      <Badge
+                        key={i}
+                        variant="outline"
+                        className="cursor-pointer hover:bg-purple-100 transition-colors"
+                        onClick={() => applyDiagnosis(d)}
+                      >
+                        {d}
+                      </Badge>
                     ))}
                   </div>
                 </div>
@@ -205,7 +377,7 @@ export function MedicalRecordForm({ language, patientId = "P001" }: MedicalRecor
             <Label>{t.diagnosis}</Label>
             <Textarea
               value={formData.diagnosis}
-              onChange={(e) => setFormData({ ...formData, diagnosis: e.target.value })}
+              onChange={(e) => setFormData(prev => ({ ...prev, diagnosis: e.target.value }))}
               rows={3}
               disabled={isLocked}
               placeholder={language === 'en' ? 'Enter diagnosis...' : 'Nhập chẩn đoán...'}
@@ -216,7 +388,7 @@ export function MedicalRecordForm({ language, patientId = "P001" }: MedicalRecor
             <Label>{t.conclusion}</Label>
             <Textarea
               value={formData.conclusion}
-              onChange={(e) => setFormData({ ...formData, conclusion: e.target.value })}
+              onChange={(e) => setFormData(prev => ({ ...prev, conclusion: e.target.value }))}
               rows={3}
               disabled={isLocked}
               placeholder={language === 'en' ? 'Medical conclusion and treatment plan...' : 'Kết luận và phương án điều trị...'}
@@ -251,7 +423,14 @@ export function MedicalRecordForm({ language, patientId = "P001" }: MedicalRecor
             </div>
           </div>
 
-          {!isLocked && (
+          {isLocked ? (
+            <div className="flex gap-2">
+              <Button onClick={handleUnlock} variant="destructive">
+                <Upload className="h-4 w-4 mr-2 rotate-180" />
+                {language === 'en' ? "Unlock Record" : "Mở Khóa Bệnh Án"}
+              </Button>
+            </div>
+          ) : (
             <div className="flex gap-2">
               <Button onClick={handleSave} variant="outline">
                 {t.save}

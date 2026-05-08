@@ -120,20 +120,16 @@ export function UserManagement({ language }: UserManagementProps) {
   // API_CALL: Function để gọi API lấy users
 const loadUsers = async () => {
   try {
-    setLoading(true);
-    const data = await getUsers(searchQuery); // Gọi hàm từ api.ts
-
-    // Backend .NET trả về danh sách User, ta gán vào State
+    // Gọi API lấy danh sách từ Backend :5041 [cite: 4]
+    const data = await getUsers(); 
+    
+    // QUAN TRỌNG: Phải set lại State để React vẽ lại giao diện
     setUsers(data); 
     setFilteredUsers(data); 
   } catch (error) {
-    console.error('Error loading users:', error);
-    setAlert({ message: 'Failed to load users', type: 'error' });
-  } finally {
-    setLoading(false);
+    console.error("Không thể load dữ liệu từ SQL", error);
   }
 };
-
   useEffect(() => {
     // Lọc trực tiếp trên mảng 'users' (dữ liệu thật từ database)
     const filtered = users.filter(user => {
@@ -190,26 +186,30 @@ const loadUsers = async () => {
 };
 
   // API_CALL: Khóa/Mở khóa tài khoản
-  const handleToggleLock = async (user: any) => {
-    try {
-      const newStatus = user.status === "active" ? "locked" : "active";
+const handleToggleLock = async (user: User) => {
+  try {
+    setLoading(true);
+    // 1. Gọi API thực tế để đổi trạng thái trong SQL Server
+    await toggleUserLock(user.id); 
 
-      // Uncomment khi có backend API
-      // await toggleUserLock(user.id, newStatus);
+    // 2. Thông báo cho Admin biết kết quả
+    const isNowLocked = user.status === "active";
+    setAlert({
+      message: isNowLocked ? t.userLocked : t.userUnlocked,
+      type: 'success'
+    });
 
-      // Mock - xóa dòng này khi có API
-      setFilteredUsers(filteredUsers.map(u => u.id === user.id ? { ...u, status: newStatus } : u));
+    // 3. Tải lại danh sách để giao diện cập nhật Badge mới nhất từ DB
+    await loadUsers(); 
 
-      setAlert({
-        message: newStatus === "locked" ? t.userLocked : t.userUnlocked,
-        type: 'success'
-      });
-      setTimeout(() => setAlert(null), 3000);
-    } catch (error) {
-      console.error('Error toggling user lock:', error);
-      setAlert({ message: 'Failed to update user status', type: 'error' });
-    }
-  };
+    setTimeout(() => setAlert(null), 3000);
+  } catch (error) {
+    console.error('Error:', error);
+    setAlert({ message: 'Không thể cập nhật trạng thái', type: 'error' });
+  } finally {
+    setLoading(false);
+  }
+};
 
   const handleEdit = (user: any) => {
     setSelectedUser(user);
@@ -217,52 +217,50 @@ const loadUsers = async () => {
   };
 
   // API_CALL: Cập nhật thông tin người dùng
-  const handleSaveEdit = async () => {
-    if (selectedUser) {
-      try {
-        setLoading(true);
+const handleSaveEdit = async () => {
+  try {
+    setLoading(true);
 
-        // Uncomment khi có backend API
-        // await updateUser(selectedUser.id, selectedUser);
+    // Chuẩn bị dữ liệu gửi đi khớp 100% với Model C# [cite: 14, 15]
+    const dataToSend = {
+      id: selectedUser.id,
+      fullName: selectedUser.fullName, // Nếu Backend dùng FullName thì ở đây phải gửi fullName
+      email: selectedUser.email,
+      phone: selectedUser.phone,
+      idCard: selectedUser.idCard,     // Đảm bảo khớp với user.IDCard ở Backend 
+      role: selectedUser.role,
+      status: selectedUser.status
+    };
 
-        // Mock - xóa dòng này khi có API
-        setFilteredUsers(filteredUsers.map(u => u.id === selectedUser.id ? selectedUser : u));
-
-        setIsEditDialogOpen(false);
-        setSelectedUser(null);
-        setAlert({ message: language === 'en' ? 'User updated successfully' : 'Cập nhật thành công', type: 'success' });
-        setTimeout(() => setAlert(null), 3000);
-      } catch (error) {
-        console.error('Error updating user:', error);
-        setAlert({ message: 'Failed to update user', type: 'error' });
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
-
+    // Gọi API với data đã chuẩn hóa
+    await updateUser(selectedUser.id, dataToSend);
+    
+    await loadUsers(); // Tải lại từ SQL 
+    setIsEditDialogOpen(false);
+    setAlert({ message: 'Cập nhật SQL thành công', type: 'success' });
+  } catch (error) {
+    setAlert({ message: 'Lỗi đồng bộ dữ liệu', type: 'error' });
+  } finally {
+    setLoading(false);
+  }
+};
   // API_CALL: Xóa người dùng
-  const handleDelete = async (user: any) => {
-    if (confirm(t.confirmDelete)) {
-      try {
-        setLoading(true);
-
-        // Uncomment khi có backend API
-        // await deleteUser(user.id);
-
-        // Mock - xóa dòng này khi có API
-        setFilteredUsers(filteredUsers.filter(u => u.id !== user.id));
-
-        setAlert({ message: language === 'en' ? 'User deleted' : 'Đã xóa người dùng', type: 'success' });
-        setTimeout(() => setAlert(null), 3000);
-      } catch (error) {
-        console.error('Error deleting user:', error);
-        setAlert({ message: 'Failed to delete user', type: 'error' });
-      } finally {
-        setLoading(false);
-      }
+const handleDelete = async (user: User) => {
+  if (window.confirm(`Xóa ${user.fullName}?`)) {
+    try {
+      // 1. Gọi đúng hàm đã sửa ở trên
+      await deleteUser(user.id); 
+      
+      // 2. Load lại để đồng bộ với SQL
+      await loadUsers(); 
+      
+      setAlert({ message: "Đã xóa vĩnh viễn", type: 'success' });
+    } catch (err) {
+      console.error(err);
+      setAlert({ message: "Lỗi kết nối API", type: 'error' });
     }
-  };
+  }
+};
 
   return (
     <div className="space-y-6">
@@ -459,8 +457,8 @@ const loadUsers = async () => {
               <div className="space-y-2">
                 <Label>{t.fullName}</Label>
                 <Input
-                  value={selectedUser.name}
-                  onChange={(e) => setSelectedUser({ ...selectedUser, name: e.target.value })}
+                  value={selectedUser.fullName}
+                  onChange={(e) => setSelectedUser({ ...selectedUser, fullName: e.target.value })}
                 />
               </div>
               <div className="space-y-2">

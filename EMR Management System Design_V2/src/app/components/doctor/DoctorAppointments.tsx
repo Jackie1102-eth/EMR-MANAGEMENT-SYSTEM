@@ -62,79 +62,6 @@ const translations = {
   }
 };
 
-// Mock data - sẽ thay bằng API
-const mockAppointments = {
-  en: [
-    {
-      id: "APT001",
-      patientId: "P001",
-      patientName: "Nguyen Van A",
-      patientPhone: "+84 909 123 456",
-      date: "2026-05-05",
-      timeSlot: "09:00",
-      department: "Cardiology",
-      status: "pending",
-      notes: ""
-    },
-    {
-      id: "APT002",
-      patientId: "P002",
-      patientName: "Tran Thi B",
-      patientPhone: "+84 909 234 567",
-      date: "2026-05-05",
-      timeSlot: "10:00",
-      department: "Cardiology",
-      status: "confirmed",
-      notes: ""
-    },
-    {
-      id: "APT003",
-      patientId: "P003",
-      patientName: "Le Van C",
-      patientPhone: "+84 909 345 678",
-      date: "2026-05-05",
-      timeSlot: "14:00",
-      department: "Cardiology",
-      status: "confirmed",
-      notes: ""
-    }
-  ],
-  vn: [
-    {
-      id: "APT001",
-      patientId: "P001",
-      patientName: "Nguyễn Văn A",
-      patientPhone: "+84 909 123 456",
-      date: "2026-05-05",
-      timeSlot: "09:00",
-      department: "Tim Mạch",
-      status: "pending",
-      notes: ""
-    },
-    {
-      id: "APT002",
-      patientId: "P002",
-      patientName: "Trần Thị B",
-      patientPhone: "+84 909 234 567",
-      date: "2026-05-05",
-      timeSlot: "10:00",
-      department: "Tim Mạch",
-      status: "confirmed",
-      notes: ""
-    },
-    {
-      id: "APT003",
-      patientId: "P003",
-      patientName: "Lê Văn C",
-      patientPhone: "+84 909 345 678",
-      date: "2026-05-05",
-      timeSlot: "14:00",
-      department: "Tim Mạch",
-      status: "confirmed",
-      notes: ""
-    }
-  ]
-};
 
 export function DoctorAppointments({ language }: DoctorAppointmentsProps) {
   const t = translations[language];
@@ -152,54 +79,57 @@ export function DoctorAppointments({ language }: DoctorAppointmentsProps) {
   }, [selectedDate]);
 
   // API_CALL: Function để gọi API lấy lịch hẹn của bác sĩ
-  const loadAppointments = async () => {
+const loadAppointments = async () => {
+  try {
+    setLoading(true);
+    // Chuyển ngày được chọn thành định dạng YYYY-MM-DD để khớp với SQL
+    const dateStr = selectedDate.toISOString().split('T')[0];
+
+    // Gọi API lấy dữ liệu từ Backend (localhost:5041)
+    const response = await fetch(`http://localhost:5041/api/appointments`);
+    const data = await response.json();
+
+    // Lọc dữ liệu: Chỉ lấy các lịch hẹn có ngày trùng với ngày đang chọn trên Calendar
+    const filtered = data.filter((apt: any) => {
+        // Chuyển đổi AppointmentDate từ Backend về dạng YYYY-MM-DD để so sánh
+        const aptDate = new Date(apt.appointmentDate).toISOString().split('T')[0];
+        return aptDate === dateStr;
+    });
+
+    setAppointments(filtered);
+  } catch (error) {
+    console.error('Error loading appointments:', error);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  // API_CALL: Cập nhật trạng thái lịch hẹn
+const handleUpdateStatus = async () => {
+  if (selectedAppointment && newStatus) {
     try {
       setLoading(true);
-      const dateStr = selectedDate.toISOString().split('T')[0];
+      
+      // Gọi API PUT để cập nhật trạng thái trong SQL [cite: 21]
+      const response = await fetch(`http://localhost:5041/api/appointments/${selectedAppointment.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newStatus) // Gửi string trạng thái mới xuống [cite: 22]
+      });
 
-      // Uncomment khi có backend API
-      // const response = await getDoctorAppointments(dateStr, dateStr);
-      // setAppointments(response.appointments);
-
-      // Mock - xóa dòng này khi có API
-      const filtered = mockAppointments[language].filter(
-        apt => apt.date === dateStr
-      );
-      setAppointments(filtered);
+      if (response.ok) {
+        setIsDialogOpen(false);
+        // Tải lại danh sách để cập nhật giao diện ngay lập tức
+        await loadAppointments();
+        setSelectedAppointment(null);
+      }
     } catch (error) {
-      console.error('Error loading appointments:', error);
+      console.error('Error updating status:', error);
     } finally {
       setLoading(false);
     }
-  };
-
-  // API_CALL: Cập nhật trạng thái lịch hẹn
-  const handleUpdateStatus = async () => {
-    if (selectedAppointment && newStatus) {
-      try {
-        setLoading(true);
-
-        // Uncomment khi có backend API
-        // await updateAppointmentStatus(selectedAppointment.id, newStatus, notes);
-
-        // Mock - xóa dòng này khi có API
-        setAppointments(appointments.map(apt =>
-          apt.id === selectedAppointment.id
-            ? { ...apt, status: newStatus, notes }
-            : apt
-        ));
-
-        setIsDialogOpen(false);
-        setSelectedAppointment(null);
-        setNewStatus("");
-        setNotes("");
-      } catch (error) {
-        console.error('Error updating appointment:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
+  }
+};
 
   const getStatusBadge = (status: string) => {
     const statusMap: Record<string, { variant: any; label: string }> = {

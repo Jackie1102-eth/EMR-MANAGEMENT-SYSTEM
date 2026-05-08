@@ -155,11 +155,20 @@ export const createUser = async (userData: any) => {
  * SQL: UPDATE Users SET Name = @name, Email = @email, Phone = @phone, Role = @role WHERE Id = @id
  * Backend endpoint: PUT /api/users/:id
  */
-export const updateUser = async (userId: string, userData: any) => {
-  return apiCall(`/users/${userId}`, {
-    method: 'PUT',
-    body: JSON.stringify(userData),
+export const updateUser = async (id: string, userData: any) => {
+  const response = await fetch(`http://localhost:5041/api/users/${id}`, {
+    method: 'PUT', // Dùng PUT cho cập nhật
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(userData)
   });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || 'Cập nhật thất bại');
+  }
+  return response.json();
 };
 
 /**
@@ -167,11 +176,20 @@ export const updateUser = async (userId: string, userData: any) => {
  * SQL: UPDATE Users SET Status = @status WHERE Id = @id
  * Backend endpoint: PATCH /api/users/:id/status
  */
-export const toggleUserLock = async (userId: string, status: 'active' | 'locked') => {
-  return apiCall(`/users/${userId}/status`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status }),
+// Thêm hàm này vào file api.ts của bạn
+export const toggleUserLock = async (id: string) => {
+  // Đảm bảo dùng dấu ` để biến ${id} hoạt động
+  const response = await fetch(`http://localhost:5041/api/users/${id}/toggle-lock`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    }
   });
+
+  if (!response.ok) {
+    throw new Error('Failed to toggle lock status');
+  }
+  return response.json();
 };
 
 /**
@@ -179,12 +197,23 @@ export const toggleUserLock = async (userId: string, status: 'active' | 'locked'
  * SQL: DELETE FROM Users WHERE Id = @id
  * Backend endpoint: DELETE /api/users/:id
  */
-export const deleteUser = async (userId: string) => {
-  return apiCall(`/users/${userId}`, {
+export const deleteUser = async (id: string) => {
+  // Đảm bảo URL này khớp với port Backend của bạn
+  const response = await fetch(`http://localhost:5041/api/users/${id}`, {
     method: 'DELETE',
+    headers: {
+      'Content-Type': 'application/json',
+      // Nếu bạn dùng JWT Token, hãy thêm dòng dưới:
+      // 'Authorization': `Bearer ${localStorage.getItem('token')}`
+    }
   });
-};
 
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(errorText || 'Xóa thất bại');
+  }
+  return response.json();
+};
 // ==================== PATIENT RECORDS ====================
 
 /**
