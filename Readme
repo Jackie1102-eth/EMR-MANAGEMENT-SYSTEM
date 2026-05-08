@@ -1,0 +1,41 @@
+
+Hãy làm theo đúng 3 bước sau:
+BƯỚC 1: CHUẨN BỊ "CƠ SỞ DỮ LIỆU" (Dưới 1 phút)
+Bạn không cần tạo bảng thủ công, mình đã làm sẵn một file mang tên script.sql trong database_setup.
+
+Mở SQL Server (SSMS) trên máy bạn.
+
+Mở file database_setup.sql mà mình gửi kèm.
+
+Nhấn nút Execute
+
+Kết quả: Bạn sẽ thấy Database ClinicDB hiện ra với đầy đủ bệnh nhân và lịch hẹn mẫu.
+
+BƯỚC 2: CHẠY "BACKEND" (Phần xử lý)
+Đây là "bộ não" của ứng dụng, giúp kết nối Web với Database.
+
+Mở thư mục ClinicAPI bằng Visual Studio hoặc VS Code.
+
+Mở file appsettings.json, tìm dòng:
+"Server=TEN_MAY_BAN;..." -> Sửa TEN_MAY_BAN thành tên máy tính của bạn.
+
+Hướng dẫn:
+Mở Terminal và gõ: dotnet run
+
+Kết quả: Hiện lên dòng chữ http://localhost:5041 là thành công.
+
+BƯỚC 3: CHẠY "FRONTEND" (Giao diện Web)
+Đây là phần bạn sẽ nhìn thấy và thao tác trên trình duyệt.
+
+Mở thư mục frontend.
+
+Gõ lệnh: npm install (để máy tải các thư viện cần thiết).
+
+Gõ lệnh: npm run dev.
+
+Mở trình duyệt vào địa chỉ: http://localhost:5173.
+
+***
+Lưu ý: Phải chạy bước 2 và bước 3 ở 2 terminal để có thể tương tác lẫn nhau 
+### Mật Khẩu $$$
+Vào Database -> Tạo 1 query -> Select * from USERS -> Execute -> Tìm dòng gmail và password và nhìn kĩ role của từng cá nhân và lấy cái đó để đăng nhập
