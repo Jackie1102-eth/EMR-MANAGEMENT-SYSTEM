@@ -13,7 +13,9 @@ public class EMRDbContext : DbContext
     public DbSet<Appointment> Appointments { get; set; }
     public DbSet<Prescription> Prescriptions { get; set; }
     public DbSet<PrescriptionDetail> PrescriptionDetails { get; set; }
-
+    public DbSet<Payment>       Payments       { get; set; }
+    public DbSet<PaymentItem>   PaymentItems   { get; set; }
+    public DbSet<InsuranceCard> InsuranceCards { get; set; }
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         // Mã bệnh nhân là duy nhất
