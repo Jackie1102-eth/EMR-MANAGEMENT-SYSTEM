@@ -29,5 +29,10 @@ public class EMRDbContext : DbContext
             .WithOne(d => d.Prescription)
             .HasForeignKey(d => d.PrescriptionId)
             .OnDelete(DeleteBehavior.Cascade);
+            modelBuilder.Entity<Patient>()
+    .HasOne(p => p.User)
+    .WithOne()
+    .HasForeignKey<Patient>(p => p.UserId)
+    .OnDelete(DeleteBehavior.SetNull);
     }
 }

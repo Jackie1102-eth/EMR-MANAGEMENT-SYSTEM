@@ -5,13 +5,13 @@ import { Button } from "../ui/button";
 import { Label } from "../ui/label";
 import { Badge } from "../ui/badge";
 import { Alert, AlertDescription } from "../ui/alert";
-import { User, Mail, Phone, MapPin, Calendar, FileText, Pill, Activity } from "lucide-react";
-// API_CALL: Import API functions
+import { User, Mail, Phone, MapPin, Calendar, Pill, Activity } from "lucide-react";
 import { getPatientProfile, updatePatientProfile } from "../../services/api";
 
 interface PatientProfileProps {
   language: 'en' | 'vn';
 }
+
 const translations = {
   en: {
     title: "My Profile",
@@ -27,19 +27,20 @@ const translations = {
     medicalInfo: "Medical Information",
     bloodType: "Blood Type",
     allergies: "Allergies",
+    allergiesHint: "Separate by comma (e.g. Penicillin, Aspirin)",
     chronicConditions: "Chronic Conditions",
+    chronicHint: "Separate by comma (e.g. Diabetes, Hypertension)",
     currentMedications: "Current Medications",
-    emergencyContact: "Emergency Contact",
-    contactName: "Contact Name",
-    contactPhone: "Contact Phone",
-    relationship: "Relationship",
+    medsHint: "Separate by comma",
     edit: "Edit Profile",
     save: "Save Changes",
     cancel: "Cancel",
     updateSuccess: "Profile updated successfully",
     male: "Male",
     female: "Female",
-    other: "Other"
+    other: "Other",
+    saving: "Saving...",
+    noData: "—",
   },
   vn: {
     title: "Hồ Sơ Của Tôi",
@@ -55,95 +56,77 @@ const translations = {
     medicalInfo: "Thông Tin Y Tế",
     bloodType: "Nhóm Máu",
     allergies: "Dị Ứng",
+    allergiesHint: "Phân cách bằng dấu phẩy (vd: Penicillin, Aspirin)",
     chronicConditions: "Bệnh Mãn Tính",
+    chronicHint: "Phân cách bằng dấu phẩy (vd: Tiểu đường, Huyết áp)",
     currentMedications: "Thuốc Đang Dùng",
-    emergencyContact: "Liên Hệ Khẩn Cấp",
-    contactName: "Tên Người Liên Hệ",
-    contactPhone: "Số Điện Thoại",
-    relationship: "Mối Quan Hệ",
+    medsHint: "Phân cách bằng dấu phẩy",
     edit: "Chỉnh Sửa",
     save: "Lưu Thay Đổi",
     cancel: "Hủy",
     updateSuccess: "Cập nhật hồ sơ thành công",
     male: "Nam",
     female: "Nữ",
-    other: "Khác"
+    other: "Khác",
+    saving: "Đang lưu...",
+    noData: "—",
   }
 };
 
-// Mock profile data
 export function PatientProfile({ language }: PatientProfileProps) {
   const t = translations[language];
 
-  // --- PHẦN CẦN THÊM/SỬA Ở ĐÂY ---
-  const [profile, setProfile] = useState<any>(null); // Lưu dữ liệu gốc từ SQL
-  const [editedProfile, setEditedProfile] = useState<any>(null); // Lưu dữ liệu khi đang chỉnh sửa
-  const [isEditing, setIsEditing] = useState(false);
-  const [loading, setLoading] = useState(true); // Để mặc định là true để hiện vòng xoay khi đang tải
-  const [alert, setAlert] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
-  
-  // --- KẾT THÚC PHẦN THÊM ---
+  const [profile, setProfile]           = useState<any>(null);
+  const [editedProfile, setEditedProfile] = useState<any>(null);
+  const [isEditing, setIsEditing]       = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [saving, setSaving]             = useState(false);
+  const [alert, setAlert]               = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
-  // API_CALL: Load profile khi component mount
-  useEffect(() => {
-    loadProfile();
-  }, []);
+  useEffect(() => { loadProfile(); }, []);
 
-    
-const loadProfile = async () => {
-  try {
-    setLoading(true);
+  const loadProfile = async () => {
+    try {
+      setLoading(true);
+      const data = await getPatientProfile();
+      setProfile(data);
+      setEditedProfile(data);
+    } catch (error) {
+      console.error('Lỗi khi tải hồ sơ:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    // ✅ Bỏ comment 3 dòng này
-    const profileData = await getPatientProfile();
-    setProfile(profileData);
-    setEditedProfile(profileData);
-
-    // ❌ Xóa 2 dòng mock dưới đây
-    // setProfile(mockProfile[language]);
-    // setEditedProfile(mockProfile[language]);
-  } catch (error) {
-    console.error('Lỗi khi tải hồ sơ:', error);
-  } finally {
-    setLoading(false);
-  }
-};
-if (loading || !profile) {
-    return (
-      <div className="flex items-center justify-center p-20">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
-        <p className="ml-3">Đang lấy dữ liệu từ SQL Server...</p>
-      </div>
-    );
-  }
-  // API_CALL: Lưu thông tin profile
-const handleSave = async () => {
-  try {
-    setLoading(true);
-
-    await updatePatientProfile(editedProfile); // ✅ bỏ comment dòng này
-
-    setProfile(editedProfile); // giữ lại để cập nhật UI
-    setIsEditing(false);
-    setAlert({ message: t.updateSuccess, type: 'success' });
-    setTimeout(() => setAlert(null), 3000);
-  } catch (error: any) {
-    console.error('Error updating profile:', error);
-    setAlert({ message: error.message || 'Cập nhật thất bại', type: 'error' });
-  } finally {
-    setLoading(false);
-  }
-};
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      await updatePatientProfile(editedProfile);
+      setProfile(editedProfile);
+      setIsEditing(false);
+      setAlert({ message: t.updateSuccess, type: 'success' });
+      setTimeout(() => setAlert(null), 3000);
+    } catch (error: any) {
+      setAlert({ message: error.message || 'Cập nhật thất bại', type: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleCancel = () => {
     setEditedProfile(profile);
     setIsEditing(false);
   };
 
+  // Helper: array → comma string cho edit, string → array cho hiển thị
+  const arrToStr = (arr: string[] | undefined) => (arr ?? []).join(', ');
+  const strToArr = (str: string) => str.split(',').map(s => s.trim()).filter(Boolean);
+
   if (loading || !profile) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary" />
+      <div className="flex items-center justify-center p-20">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
+        <p className="ml-3">Đang lấy dữ liệu từ SQL Server...</p>
       </div>
     );
   }
@@ -167,27 +150,25 @@ const handleSave = async () => {
               <CardDescription>{t.description}</CardDescription>
             </div>
             {!isEditing && (
-              <Button onClick={() => setIsEditing(true)}>
-                {t.edit}
-              </Button>
+              <Button onClick={() => setIsEditing(true)}>{t.edit}</Button>
             )}
           </div>
         </CardHeader>
+
         <CardContent className="space-y-6">
-          {/* Personal Information */}
+
+          {/* ── Personal Information ── */}
           <div>
             <h3 className="font-semibold mb-4 flex items-center gap-2">
-              <User className="h-4 w-4" />
-              {t.personalInfo}
+              <User className="h-4 w-4" /> {t.personalInfo}
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
               <div className="space-y-2">
                 <Label>{t.fullName}</Label>
                 {isEditing ? (
-                  <Input
-                    value={editedProfile.fullName}
-                    onChange={(e) => setEditedProfile({ ...editedProfile, fullName: e.target.value })}
-                  />
+                  <Input value={editedProfile.fullName}
+                    onChange={e => setEditedProfile({ ...editedProfile, fullName: e.target.value })} />
                 ) : (
                   <div className="p-2 bg-muted rounded">{profile.fullName}</div>
                 )}
@@ -201,15 +182,11 @@ const handleSave = async () => {
               <div className="space-y-2">
                 <Label>{t.email}</Label>
                 {isEditing ? (
-                  <Input
-                    type="email"
-                    value={editedProfile.email}
-                    onChange={(e) => setEditedProfile({ ...editedProfile, email: e.target.value })}
-                  />
+                  <Input type="email" value={editedProfile.email}
+                    onChange={e => setEditedProfile({ ...editedProfile, email: e.target.value })} />
                 ) : (
                   <div className="p-2 bg-muted rounded flex items-center gap-2">
-                    <Mail className="h-4 w-4" />
-                    {profile.email}
+                    <Mail className="h-4 w-4" /> {profile.email}
                   </div>
                 )}
               </div>
@@ -217,14 +194,11 @@ const handleSave = async () => {
               <div className="space-y-2">
                 <Label>{t.phone}</Label>
                 {isEditing ? (
-                  <Input
-                    value={editedProfile.phone}
-                    onChange={(e) => setEditedProfile({ ...editedProfile, phone: e.target.value })}
-                  />
+                  <Input value={editedProfile.phone}
+                    onChange={e => setEditedProfile({ ...editedProfile, phone: e.target.value })} />
                 ) : (
                   <div className="p-2 bg-muted rounded flex items-center gap-2">
-                    <Phone className="h-4 w-4" />
-                    {profile.phone}
+                    <Phone className="h-4 w-4" /> {profile.phone}
                   </div>
                 )}
               </div>
@@ -247,131 +221,144 @@ const handleSave = async () => {
               <div className="space-y-2 md:col-span-2">
                 <Label>{t.address}</Label>
                 {isEditing ? (
-                  <Input
-                    value={editedProfile.address}
-                    onChange={(e) => setEditedProfile({ ...editedProfile, address: e.target.value })}
-                  />
+                  <Input value={editedProfile.address ?? ''}
+                    onChange={e => setEditedProfile({ ...editedProfile, address: e.target.value })} />
                 ) : (
                   <div className="p-2 bg-muted rounded flex items-center gap-2">
-                    <MapPin className="h-4 w-4" />
-                    {profile.address}
+                    <MapPin className="h-4 w-4" /> {profile.address || t.noData}
                   </div>
                 )}
               </div>
+
             </div>
           </div>
 
-          {/* Medical Information */}
+          {/* ── Medical Information ── */}
           <div>
             <h3 className="font-semibold mb-4 flex items-center gap-2">
-              <Activity className="h-4 w-4" />
-              {t.medicalInfo}
+              <Activity className="h-4 w-4" /> {t.medicalInfo}
             </h3>
             <div className="space-y-4 bg-muted/50 p-4 rounded-lg">
-              <div>
-                <Label className="mb-2 block">{t.bloodType}</Label>
-                <Badge variant="outline" className="text-base">
-                  {profile.bloodType}
-                </Badge>
+
+              {/* Blood Type */}
+              <div className="space-y-2">
+                <Label>{t.bloodType}</Label>
+                {isEditing ? (
+                  <select
+                    className="w-full border rounded px-3 py-2 text-sm bg-background"
+                    value={editedProfile.bloodType ?? ''}
+                    onChange={e => setEditedProfile({ ...editedProfile, bloodType: e.target.value })}
+                  >
+                    <option value="">-- Chọn nhóm máu --</option>
+                    {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(bt => (
+                      <option key={bt} value={bt}>{bt}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <Badge variant="outline" className="text-base">
+                    {profile.bloodType || t.noData}
+                  </Badge>
+                )}
               </div>
 
-              <div>
-                <Label className="mb-2 block">{t.allergies}</Label>
-                <div className="flex flex-wrap gap-2">
-                  {(profile?.allergies || []).map((allergy: any, i: number) => (
-                    <Badge key={i} variant="destructive">
-                      {allergy}
-                    </Badge>
-                  ))}
-                </div>
+              {/* Allergies */}
+              <div className="space-y-2">
+                <Label>{t.allergies}</Label>
+                {isEditing ? (
+                  <>
+                    <Input
+                      placeholder={t.allergiesHint}
+                      value={arrToStr(editedProfile.allergies)}
+                      onChange={e => setEditedProfile({
+                        ...editedProfile,
+                        allergies: strToArr(e.target.value)
+                      })}
+                    />
+                    <p className="text-xs text-muted-foreground">{t.allergiesHint}</p>
+                  </>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {(profile.allergies ?? []).length > 0
+                      ? profile.allergies.map((a: string, i: number) => (
+                          <Badge key={i} variant="destructive">{a}</Badge>
+                        ))
+                      : <span className="text-sm text-muted-foreground">{t.noData}</span>
+                    }
+                  </div>
+                )}
               </div>
 
-              <div>
-                <Label className="mb-2 block">{t.chronicConditions}</Label>
-                <div className="flex flex-wrap gap-2">
-                  {(profile?.chronicConditions || []).map((condition: any, i: number) => (
-                    <Badge key={i} variant="secondary">
-                      {condition}
-                    </Badge>
-                  ))}
-                </div>
+              {/* Chronic Conditions */}
+              <div className="space-y-2">
+                <Label>{t.chronicConditions}</Label>
+                {isEditing ? (
+                  <>
+                    <Input
+                      placeholder={t.chronicHint}
+                      value={arrToStr(editedProfile.chronicConditions)}
+                      onChange={e => setEditedProfile({
+                        ...editedProfile,
+                        chronicConditions: strToArr(e.target.value)
+                      })}
+                    />
+                    <p className="text-xs text-muted-foreground">{t.chronicHint}</p>
+                  </>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {(profile.chronicConditions ?? []).length > 0
+                      ? profile.chronicConditions.map((c: string, i: number) => (
+                          <Badge key={i} variant="secondary">{c}</Badge>
+                        ))
+                      : <span className="text-sm text-muted-foreground">{t.noData}</span>
+                    }
+                  </div>
+                )}
               </div>
 
-              <div>
-                <Label className="mb-2 block">{t.currentMedications}</Label>
-                <div className="space-y-2">
-                  {(profile?.currentMedications || []).map((med: any, i: number) => (
-                    <div key={i} className="flex items-start gap-2 text-sm">
-                      <Pill className="h-4 w-4 mt-0.5" />
-                      {med}
-                    </div>
-                  ))}
-                </div>
+              {/* Current Medications */}
+              <div className="space-y-2">
+                <Label>{t.currentMedications}</Label>
+                {isEditing ? (
+                  <>
+                    <Input
+                      placeholder={t.medsHint}
+                      value={arrToStr(editedProfile.currentMedications)}
+                      onChange={e => setEditedProfile({
+                        ...editedProfile,
+                        currentMedications: strToArr(e.target.value)
+                      })}
+                    />
+                    <p className="text-xs text-muted-foreground">{t.medsHint}</p>
+                  </>
+                ) : (
+                  <div className="space-y-1">
+                    {(profile.currentMedications ?? []).length > 0
+                      ? profile.currentMedications.map((m: string, i: number) => (
+                          <div key={i} className="flex items-center gap-2 text-sm">
+                            <Pill className="h-4 w-4" /> {m}
+                          </div>
+                        ))
+                      : <span className="text-sm text-muted-foreground">{t.noData}</span>
+                    }
+                  </div>
+                )}
               </div>
+
             </div>
           </div>
 
-          {/* Emergency Contact */}
-          <div>
-            <h3 className="font-semibold mb-4">{t.emergencyContact}</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-orange-50 p-4 rounded-lg border border-orange-200">
-              <div className="space-y-2">
-                <Label>{t.contactName}</Label>
-                {isEditing ? (
-                  <Input
-                    value={editedProfile.emergencyContact.name}
-                    onChange={(e) => setEditedProfile({
-                      ...editedProfile,
-                      emergencyContact: { ...editedProfile.emergencyContact, name: e.target.value }
-                    })}
-                  />
-                ) : (
-                  <div className="font-medium">{profile.emergencyContact.name}</div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label>{t.contactPhone}</Label>
-                {isEditing ? (
-                  <Input
-                    value={editedProfile.emergencyContact.phone}
-                    onChange={(e) => setEditedProfile({
-                      ...editedProfile,
-                      emergencyContact: { ...editedProfile.emergencyContact, phone: e.target.value }
-                    })}
-                  />
-                ) : (
-                  <div className="font-medium">{profile.emergencyContact.phone}</div>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <Label>{t.relationship}</Label>
-                {isEditing ? (
-                  <Input
-                    value={editedProfile.emergencyContact.relationship}
-                    onChange={(e) => setEditedProfile({
-                      ...editedProfile,
-                      emergencyContact: { ...editedProfile.emergencyContact, relationship: e.target.value }
-                    })}
-                  />
-                ) : (
-                  <div className="font-medium">{profile.emergencyContact.relationship}</div>
-                )}
-              </div>
-            </div>
-          </div>
-
+          {/* ── Action buttons ── */}
           {isEditing && (
             <div className="flex gap-2">
-              <Button onClick={handleSave} disabled={loading}>
-                {loading ? (language === 'en' ? 'Saving...' : 'Đang lưu...') : t.save}
+              <Button onClick={handleSave} disabled={saving}>
+                {saving ? t.saving : t.save}
               </Button>
-              <Button variant="outline" onClick={handleCancel}>
+              <Button variant="outline" onClick={handleCancel} disabled={saving}>
                 {t.cancel}
               </Button>
             </div>
           )}
+
         </CardContent>
       </Card>
     </div>

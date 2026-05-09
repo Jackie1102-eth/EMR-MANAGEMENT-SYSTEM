@@ -283,9 +283,9 @@ export function AppointmentBooking({ language, onAppointmentBooked }: Appointmen
                 </SelectTrigger>
                 <SelectContent>
                   {availableDoctors.map((doc: any) => (
-                    <SelectItem key={doc.id} value={doc.id}>
-                      {doc.name} - {doc.specialty}
-                    </SelectItem>
+                  <SelectItem key={doc.id} value={String(doc.id)}>
+                    BS. {doc.fullName} - {doc.specialization}
+                  </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -344,7 +344,7 @@ export function AppointmentBooking({ language, onAppointmentBooked }: Appointmen
                 <div>
                   <span className="text-muted-foreground">{t.doctor}: </span>
                   <Badge variant="outline">
-                    {availableDoctors.find((d: any) => d.id === selectedDoctor)?.name}
+                    {availableDoctors.find((d: any) => String(d.id) === selectedDoctor)?.fullName}
                   </Badge>
                 </div>
                 <div>

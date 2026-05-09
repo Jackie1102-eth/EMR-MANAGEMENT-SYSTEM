@@ -18,19 +18,35 @@ namespace ClinicAPI.Controllers
 
         // ─────────────────────────────────────────
         // GET /api/appointments
-        // Lấy toàn bộ lịch hẹn (Admin)
         // ─────────────────────────────────────────
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Appointment>>> GetAppointments()
+        public async Task<ActionResult<IEnumerable<object>>> GetAppointments()
         {
-            return await _context.Appointments
+            var appointments = await _context.Appointments
+                .AsNoTracking()
                 .OrderByDescending(a => a.AppointmentDate)
+                .Select(a => new
+                {
+                    id              = a.Id,
+                    patientId       = a.PatientId,
+                    patientName     = a.PatientName ?? "",
+                    patientPhone    = a.Phone ?? "",
+                    doctorId        = a.DoctorId,
+                    departmentId    = a.DepartmentId,
+                    department      = MapDeptToVn(a.DepartmentId),
+                    appointmentDate = a.AppointmentDate.ToString("yyyy-MM-dd"),
+                    timeSlot        = a.TimeSlot,
+                    status          = a.Status.ToLower(),
+                    notes           = a.Notes ?? "",
+                    createdAt       = a.CreatedAt.ToString("yyyy-MM-dd")
+                })
                 .ToListAsync();
+
+            return Ok(appointments);
         }
 
         // ─────────────────────────────────────────
         // GET /api/appointments/today
-        // Số lịch hẹn hôm nay (Dashboard)
         // ─────────────────────────────────────────
         [HttpGet("today")]
         public async Task<ActionResult<object>> GetTodayCount()
@@ -39,22 +55,11 @@ namespace ClinicAPI.Controllers
             var count = await _context.Appointments
                 .Where(a => a.AppointmentDate.Date == today)
                 .CountAsync();
-
             return Ok(new { count });
         }
-        private static string MapDepartmentName(string deptId) => deptId switch
-        {
-            "cardiology"  => "Tim Mạch",
-            "neurology"   => "Thần Kinh",
-            "orthopedics" => "Chỉnh Hình",
-            "pediatrics"  => "Nhi Khoa",
-            "general"     => "Đa Khoa",
-            _             => deptId
-        };
+
         // ─────────────────────────────────────────
-        // GET /api/appointments/my
-        // Lịch hẹn của bệnh nhân đang đăng nhập
-        // Patient.Id == UserId (cùng Guid)
+        // GET /api/appointments/my  (Patient)
         // ─────────────────────────────────────────
         [HttpGet("my")]
         public async Task<ActionResult<object>> GetMyAppointments([FromQuery] string userId = "")
@@ -65,82 +70,143 @@ namespace ClinicAPI.Controllers
             if (!Guid.TryParse(userId, out Guid userGuid))
                 return BadRequest(new { message = "userId không hợp lệ." });
 
-            // Patient.Id == UserId — không cần JOIN
+var patient = await _context.Patients
+    .AsNoTracking()
+    .FirstOrDefaultAsync(p => p.UserId == userGuid);
+
+if (patient == null)
+    return Ok(new List<object>());
+
             var appointments = await _context.Appointments
                 .AsNoTracking()
-                .Where(a => a.PatientId == userGuid)
+                .Where(a => a.PatientId == patient.Id)
                 .OrderByDescending(a => a.AppointmentDate)
-                    .Select(a => new
-                    {
-                        id         = a.Id,
-                        date       = a.AppointmentDate.ToString("yyyy-MM-dd"),
-                        timeSlot   = a.TimeSlot,
-                        department = MapDepartmentName(a.DepartmentId),
-                        // Nếu có bảng Users:
-                        doctor     = _context.Users
-                                        .Where(u => u.Id == a.DoctorId)
-                                        .Select(u => u.FullName)
-                                        .FirstOrDefault() ?? "",
-                        // Hoặc nếu có bảng Doctors:
-                        // doctor  = _context.Doctors
-                        //               .Where(doc => doc.Id == a.DoctorId)
-                        //               .Select(doc => "BS. " + doc.FullName)
-                        //               .FirstOrDefault() ?? "",
-                        status     = a.Status.ToLower(),
-                        notes      = a.Notes ?? "",
-                        createdAt  = a.CreatedAt.ToString("yyyy-MM-dd")
-})
+                .Select(a => new
+                {
+                    id         = a.Id,
+                    date       = a.AppointmentDate.ToString("yyyy-MM-dd"),
+                    timeSlot   = a.TimeSlot,
+                    department = MapDeptToVn(a.DepartmentId),
+                    doctor     = _context.Users
+                                    .Where(u => u.Id == a.DoctorId)
+                                    .Select(u => "BS. " + u.FullName)
+                                    .FirstOrDefault() ?? "",
+                    status    = a.Status.ToLower(),
+                    notes     = a.Notes ?? "",
+                    createdAt = a.CreatedAt.ToString("yyyy-MM-dd")
+                })
                 .ToListAsync();
 
             return Ok(appointments);
         }
 
-        // ─────────────────────────────────────────
-        // GET /api/appointments/patient?userId=xxx
-        // Giữ lại cho tương thích ngược
-        // ─────────────────────────────────────────
         [HttpGet("patient")]
         public async Task<ActionResult<object>> GetPatientAppointments([FromQuery] string userId = "")
+            => await GetMyAppointments(userId);
+
+        // ─────────────────────────────────────────
+        // GET /api/appointments/departments
+        // Trả về danh sách khoa từ Users.Department
+        // Department trong DB = "cardiology", "general"...
+        // ─────────────────────────────────────────
+        [HttpGet("departments")]
+        public async Task<ActionResult<IEnumerable<object>>> GetDepartments()
         {
-            return await GetMyAppointments(userId);
+            var deptKeys = await _context.Users
+                .AsNoTracking()
+                .Where(u => u.Role == "doctor"
+                         && u.Department != null
+                         && u.Department != "")
+                .Select(u => u.Department!)
+                .Distinct()
+                .ToListAsync();
+
+            // Map key → { id, name (VN), nameEn (EN) }
+            var result = deptKeys.Select(key => new
+            {
+                id     = key,
+                name   = MapDeptToVn(key),    // hiển thị tiếng Việt
+                nameEn = MapDeptToEn(key)      // hiển thị tiếng Anh
+            }).OrderBy(d => d.nameEn).ToList();
+
+            if (!result.Any())
+            {
+                return Ok(new[]
+                {
+                    new { id = "cardiology",  name = "Tim Mạch",    nameEn = "Cardiology" },
+                    new { id = "general",     name = "Đa Khoa",     nameEn = "General Medicine" },
+                    new { id = "neurology",   name = "Thần Kinh",   nameEn = "Neurology" },
+                    new { id = "orthopedics", name = "Chỉnh Hình",  nameEn = "Orthopedics" },
+                    new { id = "pediatrics",  name = "Nhi Khoa",    nameEn = "Pediatrics" },
+                });
+            }
+
+            return Ok(result);
         }
 
         // ─────────────────────────────────────────
-        // GET /api/appointments/doctor?from=&to=
-        // Lịch hẹn của bác sĩ đang đăng nhập
+        // GET /api/appointments/doctors?departmentId=cardiology
+        // departmentId = key trong DB ("cardiology", "general"...)
         // ─────────────────────────────────────────
-        [HttpGet("doctor")]
-        public async Task<ActionResult<object>> GetDoctorAppointments(
-            [FromQuery] string userId = "",
-            [FromQuery] string from = "",
-            [FromQuery] string to = "")
+        [HttpGet("doctors")]
+        public async Task<ActionResult<IEnumerable<object>>> GetDoctorsByDepartment(
+            [FromQuery] string departmentId = "")
         {
-            if (string.IsNullOrEmpty(userId))
-                userId = Request.Headers["X-User-Id"].FirstOrDefault() ?? "";
+            var query = _context.Users
+                .AsNoTracking()
+                .Where(u => u.Role == "doctor" && u.Status == "active");
 
-            if (!Guid.TryParse(userId, out Guid doctorGuid))
-                return BadRequest(new { message = "userId không hợp lệ." });
+            if (!string.IsNullOrEmpty(departmentId))
+                query = query.Where(u => u.Department == departmentId);
 
-            var query = _context.Appointments
-                .Where(a => a.DoctorId == doctorGuid);
-
-            if (DateTime.TryParse(from, out DateTime fromDate))
-                query = query.Where(a => a.AppointmentDate >= fromDate);
-
-            if (DateTime.TryParse(to, out DateTime toDate))
-                query = query.Where(a => a.AppointmentDate <= toDate);
-
-            var appointments = await query
-                .OrderBy(a => a.AppointmentDate)
-                .ThenBy(a => a.TimeSlot)
+            var doctors = await query
+                .Select(u => new
+                {
+                    id             = u.Id,
+                    fullName       = u.FullName,
+                    specialization = MapDeptToVn(u.Department ?? "")
+                })
                 .ToListAsync();
 
-            return Ok(appointments);
+            return Ok(doctors);
+        }
+
+        // ─────────────────────────────────────────
+        // GET /api/appointments/available-slots
+        // ─────────────────────────────────────────
+        [HttpGet("available-slots")]
+        public async Task<ActionResult<IEnumerable<string>>> GetAvailableSlots(
+            [FromQuery] string doctorId,
+            [FromQuery] string date)
+        {
+            if (!Guid.TryParse(doctorId, out Guid doctorGuid))
+                return BadRequest(new { message = "doctorId không hợp lệ." });
+
+            if (!DateTime.TryParse(date, out DateTime appointmentDate))
+                return BadRequest(new { message = "Ngày không hợp lệ." });
+
+            var allSlots = new List<string>();
+            for (int h = 7; h <= 16; h++)
+            {
+                allSlots.Add($"{h:D2}:00");
+                if (h < 16) allSlots.Add($"{h:D2}:30");
+            }
+            allSlots.Add("16:30");
+
+            var bookedSlots = await _context.Appointments
+                .AsNoTracking()
+                .Where(a =>
+                    a.DoctorId == doctorGuid &&
+                    a.AppointmentDate.Date == appointmentDate.Date &&
+                    a.Status != "cancelled")
+                .Select(a => a.TimeSlot)
+                .ToListAsync();
+
+            return Ok(allSlots.Where(s => !bookedSlots.Contains(s)).ToList());
         }
 
         // ─────────────────────────────────────────
         // GET /api/appointments/check-availability
-        // Kiểm tra slot còn trống
         // ─────────────────────────────────────────
         [HttpGet("check-availability")]
         public async Task<ActionResult<object>> CheckAvailability(
@@ -164,51 +230,11 @@ namespace ClinicAPI.Controllers
         }
 
         // ─────────────────────────────────────────
-        // GET /api/appointments/available-slots
-        // Slot còn trống của bác sĩ trong ngày
-        // ─────────────────────────────────────────
-        [HttpGet("available-slots")]
-        public async Task<ActionResult<IEnumerable<string>>> GetAvailableSlots(
-            [FromQuery] string doctorId,
-            [FromQuery] string date)
-        {
-            if (!Guid.TryParse(doctorId, out Guid doctorGuid))
-                return BadRequest(new { message = "doctorId không hợp lệ." });
-
-            if (!DateTime.TryParse(date, out DateTime appointmentDate))
-                return BadRequest(new { message = "Ngày không hợp lệ." });
-
-            // Tất cả slot: 07:00 - 16:30, cách 30 phút
-            var allSlots = new List<string>();
-            for (int h = 7; h <= 16; h++)
-            {
-                allSlots.Add($"{h:D2}:00");
-                if (h < 16) allSlots.Add($"{h:D2}:30");
-            }
-            allSlots.Add("16:30");
-
-            var bookedSlots = await _context.Appointments
-                .AsNoTracking()
-                .Where(a =>
-                    a.DoctorId == doctorGuid &&
-                    a.AppointmentDate.Date == appointmentDate.Date &&
-                    a.Status != "cancelled")
-                .Select(a => a.TimeSlot)
-                .ToListAsync();
-
-            var available = allSlots.Where(s => !bookedSlots.Contains(s)).ToList();
-            return Ok(available);
-        }
-
-        // ─────────────────────────────────────────
-        // POST /api/appointments
-        // Đặt lịch hẹn mới
-        // Nhận userId — tự tìm Patient vì Patient.Id == UserId
+        // POST /api/appointments  (Patient đặt lịch)
         // ─────────────────────────────────────────
         [HttpPost]
         public async Task<ActionResult<object>> BookAppointment([FromBody] BookAppointmentDto dto)
         {
-            // Hỗ trợ cả PatientId (cũ) lẫn UserId (mới)
             var rawId = !string.IsNullOrEmpty(dto.UserId) ? dto.UserId : dto.PatientId;
 
             if (!Guid.TryParse(rawId, out Guid patientGuid))
@@ -222,10 +248,9 @@ namespace ClinicAPI.Controllers
 
             appointmentDate = DateTime.SpecifyKind(appointmentDate.Date, DateTimeKind.Utc);
 
-            if (appointmentDate.Date < DateTime.Now.Date)
+            if (appointmentDate.Date < DateTime.UtcNow.Date)
                 return BadRequest(new { message = "Không thể đặt lịch cho ngày trong quá khứ." });
 
-            // Kiểm tra slot trùng
             var conflict = await _context.Appointments.AnyAsync(a =>
                 a.DoctorId == doctorGuid &&
                 a.AppointmentDate.Date == appointmentDate.Date &&
@@ -235,15 +260,18 @@ namespace ClinicAPI.Controllers
             if (conflict)
                 return Conflict(new { message = "Giờ khám này đã có người đặt." });
 
-            // Patient.Id == UserId — tìm thông tin bệnh nhân
-            var patient = await _context.Patients.FindAsync(patientGuid);
-            if (patient == null)
-                return NotFound(new { message = "Không tìm thấy hồ sơ bệnh nhân." });
+                // Tìm theo UserId trước, nếu không có thì thử Patient.Id
+                var patient = await _context.Patients.FirstOrDefaultAsync(p => p.UserId == patientGuid)
+                        ?? await _context.Patients.FindAsync(patientGuid);
 
-            var appointment = new Appointment
-            {
+                if (patient == null)
+                    return NotFound(new { message = "Không tìm thấy hồ sơ bệnh nhân." });
+
+                var appointment = new Appointment
+                {
+                    
                 Id              = Guid.NewGuid(),
-                PatientId       = patientGuid,
+                PatientId       = patient.Id,
                 DoctorId        = doctorGuid,
                 DepartmentId    = dto.DepartmentId ?? "",
                 AppointmentDate = appointmentDate,
@@ -267,8 +295,7 @@ namespace ClinicAPI.Controllers
         }
 
         // ─────────────────────────────────────────
-        // PATCH /api/appointments/{id}/status
-        // Cập nhật trạng thái (Doctor confirm/complete)
+        // PATCH + PUT /api/appointments/{id}/status
         // ─────────────────────────────────────────
         [HttpPatch("{id}/status")]
         public async Task<IActionResult> UpdateStatus(Guid id, [FromBody] UpdateStatusDto dto)
@@ -277,17 +304,25 @@ namespace ClinicAPI.Controllers
             if (appointment == null)
                 return NotFound(new { message = "Không tìm thấy lịch hẹn." });
 
-            appointment.Status = dto.Status;
+            appointment.Status = dto.Status.ToLower();
             if (!string.IsNullOrEmpty(dto.Notes))
                 appointment.Notes = dto.Notes;
 
             await _context.SaveChangesAsync();
-            return Ok(new { message = "Cập nhật thành công.", status = dto.Status });
+            return Ok(new { message = "Cập nhật thành công.", status = appointment.Status });
         }
 
+            [HttpPut("{id}/status")]
+            public async Task<IActionResult> UpdateStatusPut(Guid id, [FromBody] object body)
+            {
+                var dto = body?.ToString()?.Trim('"') is string s && s.Length > 0
+                    ? new UpdateStatusDto { Status = s }
+                    : System.Text.Json.JsonSerializer.Deserialize<UpdateStatusDto>(body!.ToString()!);
+                return await UpdateStatus(id, dto!);
+            }
+
         // ─────────────────────────────────────────
-        // PUT /api/appointments/{id}/cancel
-        // Hủy lịch hẹn (bệnh nhân tự hủy)
+        // PUT /api/appointments/{id}/cancel  (Patient hủy)
         // ─────────────────────────────────────────
         [HttpPut("{id}/cancel")]
         public async Task<IActionResult> CancelByPatient(Guid id, [FromQuery] string userId = "")
@@ -302,21 +337,21 @@ namespace ClinicAPI.Controllers
             if (appointment == null)
                 return NotFound(new { message = "Không tìm thấy lịch hẹn." });
 
-            // Kiểm tra lịch hẹn có thuộc về bệnh nhân này không
-            // Patient.Id == UserId nên so sánh trực tiếp
-            if (appointment.PatientId != userGuid)
-                return StatusCode(403, new { message = "Bạn không có quyền hủy lịch hẹn này." });
+                // Tìm Patient từ UserId
+            var patient = await _context.Patients
+                .FirstOrDefaultAsync(p => p.UserId == userGuid);
 
+            if (patient == null || appointment.PatientId != patient.Id)
+                return StatusCode(403, new { message = "Bạn không có quyền hủy lịch hẹn này." });
             if (appointment.Status == "completed" || appointment.Status == "cancelled")
                 return BadRequest(new { message = "Không thể hủy lịch hẹn này." });
 
-            // Kiểm tra 2 giờ trước giờ khám
             var appointmentDateTime = appointment.AppointmentDate.Date
                 .Add(TimeSpan.Parse(appointment.TimeSlot));
             var hoursUntil = (appointmentDateTime - DateTime.Now).TotalHours;
 
             if (hoursUntil > 0 && hoursUntil < 2)
-                return BadRequest(new { message = "Không thể hủy lịch hẹn trong vòng 2 giờ trước giờ khám." });
+                return BadRequest(new { message = "Không thể hủy trong vòng 2 giờ trước giờ khám." });
 
             appointment.Status      = "cancelled";
             appointment.CancelledAt = DateTime.UtcNow;
@@ -326,8 +361,7 @@ namespace ClinicAPI.Controllers
         }
 
         // ─────────────────────────────────────────
-        // DELETE /api/appointments/{id}
-        // Hủy lịch hẹn (Admin / giữ tương thích cũ)
+        // DELETE /api/appointments/{id}  (Admin)
         // ─────────────────────────────────────────
         [HttpDelete("{id}")]
         public async Task<IActionResult> CancelAppointment(Guid id, [FromBody] CancelDto? dto = null)
@@ -343,6 +377,36 @@ namespace ClinicAPI.Controllers
             await _context.SaveChangesAsync();
             return Ok(new { message = "Đã hủy lịch hẹn." });
         }
+
+        // ─────────────────────────────────────────
+        // Helpers — DB lưu key tiếng Anh thường
+        // cardiology | general | neurology | orthopedics | pediatrics
+        // ─────────────────────────────────────────
+        private static string MapDeptToVn(string key) => key switch
+        {
+            "cardiology"  => "Tim Mạch",
+            "general"     => "Đa Khoa",
+            "neurology"   => "Thần Kinh",
+            "orthopedics" => "Chỉnh Hình",
+            "pediatrics"  => "Nhi Khoa",
+            "dermatology" => "Da Liễu",
+            "ophthalmology" => "Mắt",
+            "ent"         => "Tai Mũi Họng",
+            _             => key
+        };
+
+        private static string MapDeptToEn(string key) => key switch
+        {
+            "cardiology"  => "Cardiology",
+            "general"     => "General Medicine",
+            "neurology"   => "Neurology",
+            "orthopedics" => "Orthopedics",
+            "pediatrics"  => "Pediatrics",
+            "dermatology" => "Dermatology",
+            "ophthalmology" => "Ophthalmology",
+            "ent"         => "ENT",
+            _             => key
+        };
     }
 
     // ─────────────────────────────────────────
@@ -350,19 +414,19 @@ namespace ClinicAPI.Controllers
     // ─────────────────────────────────────────
     public class BookAppointmentDto
     {
-        public string? UserId      { get; set; }   // mới — Patient.Id == UserId
-        public string? PatientId   { get; set; }   // cũ — giữ tương thích
-        public string DoctorId     { get; set; } = "";
+        public string? UserId       { get; set; }
+        public string? PatientId    { get; set; }
+        public string  DoctorId     { get; set; } = "";
         public string? DepartmentId { get; set; }
-        public string Date         { get; set; } = "";
-        public string TimeSlot     { get; set; } = "";
-        public string? Notes       { get; set; }
+        public string  Date         { get; set; } = "";
+        public string  TimeSlot     { get; set; } = "";
+        public string? Notes        { get; set; }
     }
 
     public class UpdateStatusDto
     {
-        public string Status { get; set; } = "";
-        public string? Notes { get; set; }
+        public string  Status { get; set; } = "";
+        public string? Notes  { get; set; }
     }
 
     public class CancelDto

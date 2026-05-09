@@ -132,12 +132,14 @@ export const registerVerifyOtp = async (email: string, otp: string): Promise<voi
   await apiCall('/auth/register/verify-otp', {
     method: 'POST',
     body: JSON.stringify({
-      fullName:  payload.fullName,
-      idNumber:  payload.idNumber,
-      email:     payload.email,
-      phone:     payload.phone,
-      password:  payload.password,
-      otp:       otp,
+      fullName:    payload.fullName,
+      idNumber:    payload.idNumber,
+      email:       payload.email,
+      phone:       payload.phone,
+      dateOfBirth: payload.dateOfBirth, 
+      gender:      payload.gender,      
+      password:    payload.password,
+      otp:         otp,
     }),
   });
 
@@ -289,19 +291,34 @@ export const getPatientProfile = async () => {
   };
 };
 
+// Thay hàm updatePatientProfile hiện tại trong api.ts bằng hàm này:
+
 export const updatePatientProfile = async (profileData: any) => {
   const userId = localStorage.getItem('userId') || '';
   if (!userId) throw new Error('Chưa đăng nhập.');
-  const response = await fetch(`http://localhost:5041/api/patients/${userId}`, {
+
+  const response = await fetch(`http://localhost:5041/api/patients/by-user/${userId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      FullName: profileData.fullName,
-      Phone:    profileData.phone,
-      Email:    profileData.email,
-      Address:  profileData.address,
+      fullName:          profileData.fullName,
+      phone:             profileData.phone,
+      email:             profileData.email,
+      address:           profileData.address,
+      bloodType:         profileData.bloodType,
+      // array → comma-separated string để lưu DB
+      allergies:         Array.isArray(profileData.allergies)
+                           ? profileData.allergies.join(', ')
+                           : profileData.allergies,
+      chronicConditions: Array.isArray(profileData.chronicConditions)
+                           ? profileData.chronicConditions.join(', ')
+                           : profileData.chronicConditions,
+      currentMedications: Array.isArray(profileData.currentMedications)
+                           ? profileData.currentMedications.join(', ')
+                           : profileData.currentMedications,
     }),
   });
+
   if (!response.ok) {
     const err = await response.json().catch(() => null);
     throw new Error(err?.message || 'Cập nhật thất bại');
@@ -381,7 +398,7 @@ export const checkAppointmentAvailability = async (doctorId: string, date: strin
   apiCall(`/appointments/check-availability?${new URLSearchParams({ doctorId, date, timeSlot })}`);
 
 export const getDoctorsByDepartment = async (departmentId: string) =>
-  apiCall(`/doctors?${new URLSearchParams({ department: departmentId })}`);
+  apiCall(`/appointments/doctors?departmentId=${departmentId}`);
 
 export const getAvailableSlots = async (doctorId: string, date: string): Promise<string[]> =>
   apiCall(`/appointments/available-slots?doctorId=${doctorId}&date=${date}`);

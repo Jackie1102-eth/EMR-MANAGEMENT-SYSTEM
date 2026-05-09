@@ -12,7 +12,8 @@ public class Patient
     public string? IDCard { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string Status { get; set; } = "active";
-
+    public Guid? UserId { get; set; }
+    public User? User { get; set; }
         public string? BloodType { get; set; }
 
         public string? Allergies { get; set; }

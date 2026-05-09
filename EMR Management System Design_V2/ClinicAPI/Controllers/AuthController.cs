@@ -73,20 +73,18 @@ namespace ClinicAPI.Controllers
         // ==================== ĐĂNG KÝ ====================
 
         // Bước 1: Frontend gửi thông tin → backend lưu OTP vào _otpStore
-        // (Email thật đã được EmailJS gửi từ frontend rồi, backend chỉ cần lưu OTP để xác thực)
         [HttpPost("register/save-otp")]
         public IActionResult RegisterSaveOtp([FromBody] RegisterOtpRequest request)
         {
             if (string.IsNullOrEmpty(request.Email) || string.IsNullOrEmpty(request.Otp))
                 return BadRequest(new { message = "Email và OTP là bắt buộc." });
 
-            // Lưu OTP vào store, hiệu lực 5 phút
             _otpStore[$"register:{request.Email}"] = (request.Otp, DateTime.Now.AddMinutes(5));
 
             return Ok(new { message = "OTP đã được lưu." });
         }
 
-        // Bước 2: Frontend gửi OTP người dùng nhập → backend xác thực và tạo tài khoản
+        // Bước 2: Xác thực OTP → tạo User + Patient cùng lúc
         [HttpPost("register/verify-otp")]
         public async Task<IActionResult> RegisterVerifyOtp([FromBody] RegisterVerifyRequest request)
         {
@@ -112,23 +110,46 @@ namespace ClinicAPI.Controllers
             if (await _context.Users.AnyAsync(u => u.IDCard == request.IdNumber))
                 return BadRequest(new { message = "Số CCCD này đã được đăng ký." });
 
-            // Tạo user mới
+            // ✅ Tạo User mới
             var newUser = new User
             {
-                FullName = request.FullName,
-                IDCard   = request.IdNumber,
-                Email    = request.Email,
-                Phone    = request.Phone,
-                // DateOfBirth và Gender — thêm vào model nếu chưa có
-                PasswordHash         = request.Password, // giữ nguyên như login hiện tại
-                Role                 = "patient",
-                Status               = "active",
-                FailedLoginAttempts  = 0,
-                CreatedAt            = DateTime.Now,
-                UpdatedAt            = DateTime.Now,
+                Id                  = Guid.NewGuid(),
+                FullName            = request.FullName,
+                IDCard              = request.IdNumber,
+                Email               = request.Email,
+                Phone               = request.Phone,
+                PasswordHash        = request.Password,
+                Role                = "patient",
+                Status              = "active",
+                FailedLoginAttempts = 0,
+                CreatedAt           = DateTime.Now,
+                UpdatedAt           = DateTime.Now,
             };
 
             _context.Users.Add(newUser);
+            await _context.SaveChangesAsync(); // Lưu trước để có newUser.Id
+
+            // ✅ Tạo Patient tương ứng — đây là bước bị thiếu trước đây
+            var patientCode = await GeneratePatientCodeAsync();
+
+            var newPatient = new Patient
+            {
+                Id          = Guid.NewGuid(),
+                UserId      = newUser.Id,           // liên kết với User vừa tạo
+                PatientCode = patientCode,           // BN001, BN002, ...
+                FullName    = request.FullName,
+                Email       = request.Email,
+                Phone       = request.Phone,
+                IDCard      = request.IdNumber,
+                DateOfBirth = DateTime.TryParse(request.DateOfBirth, out var dob)
+                                  ? dob
+                                  : DateTime.Now,
+                Gender      = request.Gender,
+                Status      = "active",
+                CreatedAt   = DateTime.UtcNow,
+            };
+
+            _context.Patients.Add(newPatient);
             await _context.SaveChangesAsync();
 
             _otpStore.Remove(key);
@@ -138,7 +159,6 @@ namespace ClinicAPI.Controllers
 
         // ==================== QUÊN MẬT KHẨU ====================
 
-        // Bước 1: Lưu OTP quên mật khẩu (email đã được EmailJS gửi từ frontend)
         [HttpPost("forgot-password/save-otp")]
         public IActionResult ForgotPasswordSaveOtp([FromBody] RegisterOtpRequest request)
         {
@@ -150,7 +170,6 @@ namespace ClinicAPI.Controllers
             return Ok(new { message = "OTP đã được lưu." });
         }
 
-        // Bước 2: Xác thực OTP → trả về resetToken
         [HttpPost("forgot-password/verify-otp")]
         public IActionResult ForgotPasswordVerifyOtp([FromBody] VerifyOtpRequest request)
         {
@@ -170,14 +189,12 @@ namespace ClinicAPI.Controllers
 
             _otpStore.Remove(key);
 
-            // Tạo resetToken đơn giản
             var resetToken = Convert.ToBase64String(Guid.NewGuid().ToByteArray());
             _otpStore[$"reset:{resetToken}"] = (request.EmailOrPhone, DateTime.Now.AddMinutes(10));
 
             return Ok(new { resetToken });
         }
 
-        // Bước 3: Đặt mật khẩu mới
         [HttpPost("reset-password")]
         public async Task<IActionResult> ResetPassword([FromBody] ResetPasswordRequest request)
         {
@@ -192,7 +209,7 @@ namespace ClinicAPI.Controllers
                 return BadRequest(new { message = "Phiên đã hết hạn. Vui lòng thực hiện lại." });
             }
 
-            var emailOrPhone = record.Otp; // lúc này Otp field lưu email/phone
+            var emailOrPhone = record.Otp;
             var user = await _context.Users.FirstOrDefaultAsync(u =>
                 u.Email == emailOrPhone || u.Phone == emailOrPhone);
 
@@ -206,6 +223,26 @@ namespace ClinicAPI.Controllers
             _otpStore.Remove(key);
 
             return Ok(new { message = "Đặt lại mật khẩu thành công!" });
+        }
+
+        // ==================== HELPER ====================
+
+        // ✅ Tự động sinh mã BN001, BN002, ... không bị trùng
+        private async Task<string> GeneratePatientCodeAsync()
+        {
+            var lastPatient = await _context.Patients
+                .OrderByDescending(p => p.PatientCode)
+                .FirstOrDefaultAsync();
+
+            if (lastPatient == null)
+                return "BN001";
+
+            // Tách số từ mã cuối (VD: "BN012" → 12)
+            var numberPart = lastPatient.PatientCode.Replace("BN", "");
+            if (int.TryParse(numberPart, out var lastNumber))
+                return $"BN{(lastNumber + 1):D3}"; // D3 = 3 chữ số: 001, 002, ...
+
+            return $"BN{Guid.NewGuid().ToString()[..4].ToUpper()}"; // fallback
         }
 
         // ==================== JWT ====================
@@ -245,12 +282,14 @@ namespace ClinicAPI.Controllers
 
     public class RegisterVerifyRequest
     {
-        public string FullName  { get; set; } = "";
-        public string IdNumber  { get; set; } = "";
-        public string Email     { get; set; } = "";
-        public string Phone     { get; set; } = "";
-        public string Password  { get; set; } = "";
-        public string Otp       { get; set; } = "";
+        public string FullName   { get; set; } = "";
+        public string IdNumber   { get; set; } = "";
+        public string Email      { get; set; } = "";
+        public string Phone      { get; set; } = "";
+        public string DateOfBirth { get; set; } = ""; // ✅ THÊM MỚI
+        public string Gender     { get; set; } = "";  // ✅ THÊM MỚI
+        public string Password   { get; set; } = "";
+        public string Otp        { get; set; } = "";
     }
 
     public class VerifyOtpRequest
@@ -261,7 +300,7 @@ namespace ClinicAPI.Controllers
 
     public class ResetPasswordRequest
     {
-        public string ResetToken   { get; set; } = "";
-        public string NewPassword  { get; set; } = "";
+        public string ResetToken  { get; set; } = "";
+        public string NewPassword { get; set; } = "";
     }
 }

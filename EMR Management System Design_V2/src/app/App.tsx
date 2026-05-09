@@ -157,8 +157,8 @@ const handleLogin = async (email: string, password: string, remember: boolean) =
 
     setUserRole((response.user?.role || response.role) as UserRole);
     setCurrentUser({ 
-      name: response.user?.name || response.name, 
-      email: response.user?.email || response.email 
+        name: response.user?.fullName || response.fullName || '', 
+        email: email,
     });
     setActiveTab('dashboard');
   } catch (err) {
@@ -166,11 +166,14 @@ const handleLogin = async (email: string, password: string, remember: boolean) =
     throw err;
   }
 };
-  const handleLogout = () => {
+const handleLogout = () => {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('userRole');
     setUserRole(null);
     setCurrentUser({ name: "", email: "" });
     setAuthView('login');
-  };
+};
 
   const navigationItems = getNavigationItems(userRole, t);
 

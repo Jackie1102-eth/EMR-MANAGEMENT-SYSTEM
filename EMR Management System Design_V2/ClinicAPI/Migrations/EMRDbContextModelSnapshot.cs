@@ -72,7 +72,7 @@ namespace ClinicAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Appointments");
+                    b.ToTable("Appointments", (string)null);
                 });
 
             modelBuilder.Entity("ClinicAPI.Models.MedicalRecord", b =>
@@ -104,7 +104,7 @@ namespace ClinicAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("MedicalRecords");
+                    b.ToTable("MedicalRecords", (string)null);
                 });
 
             modelBuilder.Entity("ClinicAPI.Models.Patient", b =>
@@ -168,7 +168,7 @@ namespace ClinicAPI.Migrations
                     b.HasIndex("PatientCode")
                         .IsUnique();
 
-                    b.ToTable("Patients");
+                    b.ToTable("Patients", (string)null);
                 });
 
             modelBuilder.Entity("ClinicAPI.Models.Prescription", b =>
@@ -191,7 +191,7 @@ namespace ClinicAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Prescriptions");
+                    b.ToTable("Prescriptions", (string)null);
                 });
 
             modelBuilder.Entity("ClinicAPI.Models.PrescriptionDetail", b =>
@@ -220,7 +220,7 @@ namespace ClinicAPI.Migrations
 
                     b.HasIndex("PrescriptionId");
 
-                    b.ToTable("PrescriptionDetails");
+                    b.ToTable("PrescriptionDetails", (string)null);
                 });
 
             modelBuilder.Entity("ClinicAPI.Models.User", b =>
@@ -273,7 +273,7 @@ namespace ClinicAPI.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("ClinicAPI.Models.PrescriptionDetail", b =>
