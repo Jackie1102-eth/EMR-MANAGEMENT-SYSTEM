@@ -5,7 +5,7 @@
 
 // ✅ ĐỔI URL NÀY sau khi deploy Railway xong
 // Ví dụ: 'https://clinicapi-production.up.railway.app/api'
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5041/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '${import.meta.env.VITE_API_URL}';
 
 const EMAILJS_SERVICE_ID        = 'service_aoi034g';
 const EMAILJS_TEMPLATE_ID       = 'template_5mo81mr';

@@ -27,7 +27,7 @@ interface BillItem {
   amount: number;
 }
 
-const API_BASE = "http://localhost:5041/api";
+const API_BASE = "${import.meta.env.VITE_API_URL}";
 
 export function DoctorBilling({ language, patientId, appointmentId }: DoctorBillingProps) {
   const isEn = language === 'en';

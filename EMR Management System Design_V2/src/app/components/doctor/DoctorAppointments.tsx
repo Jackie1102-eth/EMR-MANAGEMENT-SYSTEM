@@ -163,7 +163,7 @@ export function DoctorAppointments({ language }: DoctorAppointmentsProps) {
     try {
       setLoading(true);
       const dateStr = toLocalDateStr(selectedDate);
-      const response = await fetch(`http://localhost:5041/api/appointments`);
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/appointments`);
       if (!response.ok) throw new Error("API error");
       const data = await response.json();
       const filtered = data.filter((apt: any) => {
@@ -185,7 +185,7 @@ export function DoctorAppointments({ language }: DoctorAppointmentsProps) {
     try {
       setSavingStatus(true);
       const response = await fetch(
-        `http://localhost:5041/api/appointments/${selectedAppointment.id}/status`,
+        `${import.meta.env.VITE_API_URL}/appointments/${selectedAppointment.id}/status`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -233,7 +233,7 @@ export function DoctorAppointments({ language }: DoctorAppointmentsProps) {
     try {
       setCreatingBill(true);
       const userId = localStorage.getItem("userId") || "";
-      const response = await fetch(`http://localhost:5041/api/payments/bill`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/payments/bill`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

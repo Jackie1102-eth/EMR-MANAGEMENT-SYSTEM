@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Đây là địa chỉ Backend .NET của bạn
-const API_BASE_URL = 'http://localhost:5041/api/patients';
+const API_BASE_URL = '${import.meta.env.VITE_API_URL}/patients';
 
 export const getPatients = async () => {
     try {

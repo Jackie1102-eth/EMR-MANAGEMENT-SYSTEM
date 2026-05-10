@@ -67,10 +67,10 @@ useEffect(() => {
     try {
       // Fetch song song 3 API cùng lúc cho nhanh
 const [patientsRes, recordsRes, appointmentsRes, alertsRes] = await Promise.allSettled([
-  fetch('http://localhost:5041/api/patients', { headers }),
-  fetch('http://localhost:5041/api/medicalrecords', { headers }),
-  fetch('http://localhost:5041/api/appointments/today', { headers }),
-  fetch('http://localhost:5041/api/dashboard/alerts', { headers }),  // <-- thêm dòng này
+fetch(`${import.meta.env.VITE_API_URL}/patients`, { headers }),
+fetch(`${import.meta.env.VITE_API_URL}/medicalrecords`, { headers }),
+fetch(`${import.meta.env.VITE_API_URL}/appointments/today`, { headers }),
+fetch(`${import.meta.env.VITE_API_URL}/dashboard/alerts`, { headers }),
 ]);
 if (alertsRes.status === 'fulfilled' && alertsRes.value.ok) {
   const data = await alertsRes.value.json();

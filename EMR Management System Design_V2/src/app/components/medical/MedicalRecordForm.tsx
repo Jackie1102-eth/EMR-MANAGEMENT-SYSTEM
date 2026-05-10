@@ -155,7 +155,7 @@ export function MedicalRecordForm({ language, patientId }: MedicalRecordFormProp
 
       // Gọi API lấy dữ liệu cũ từ server
       try {
-        const response = await fetch(`http://localhost:5041/api/medicalrecords/patient/${pid}`);
+        const response = await fetch(`${import.meta.env.VITE_API_URL}/medicalrecords/patient/${pid}`);
         if (response.ok) {
           const data = await response.json();
           if (data && data.length > 0) {
@@ -220,7 +220,7 @@ export function MedicalRecordForm({ language, patientId }: MedicalRecordFormProp
     };
 
     try {
-      const response = await fetch('http://localhost:5041/api/medicalrecords', {
+      const response = await fetch('${import.meta.env.VITE_API_URL}/medicalrecords', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(recordData)
