@@ -1,15 +1,16 @@
 /**
  * API SERVICE
- * Login → backend thật
- * Register/ForgotPassword → EmailJS gửi email + backend lưu OTP + backend tạo tài khoản
+ * ĐÃ CẬP NHẬT: trỏ đến Railway backend thay vì localhost
  */
 
-const API_BASE_URL = 'http://localhost:5041/api';
+// ✅ ĐỔI URL NÀY sau khi deploy Railway xong
+// Ví dụ: 'https://clinicapi-production.up.railway.app/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5041/api';
 
-const EMAILJS_SERVICE_ID       = 'service_aoi034g';
-const EMAILJS_TEMPLATE_ID      = 'template_5mo81mr';      // quên mật khẩu
-const EMAILJS_TEMPLATE_REGISTER = 'template_08b9wvs';     // ← ID template mới của đăng ký
-const EMAILJS_PUBLIC_KEY       = 'sVSCLgHBuLmVpVWQ6';
+const EMAILJS_SERVICE_ID        = 'service_aoi034g';
+const EMAILJS_TEMPLATE_ID       = 'template_5mo81mr';
+const EMAILJS_TEMPLATE_REGISTER = 'template_08b9wvs';
+const EMAILJS_PUBLIC_KEY        = 'sVSCLgHBuLmVpVWQ6';
 
 // ==================== HELPER ====================
 
@@ -35,8 +36,6 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ==================== OTP STORE (frontend, chỉ để verify) ====================
-// Backend là nơi xác thực thật, frontend chỉ giữ OTP tạm để gửi lên
 const _localOtpStore: Record<string, string> = {};
 
 function generateOtp(): string {
@@ -46,10 +45,10 @@ function generateOtp(): string {
 // ==================== GỬI EMAIL QUA EMAILJS ====================
 
 async function sendOtpEmail(
-  toEmail: string, 
-  otp: string, 
+  toEmail: string,
+  otp: string,
   subject: string,
-  templateId: string = EMAILJS_TEMPLATE_ID  // mặc định dùng template quên mật khẩu
+  templateId: string = EMAILJS_TEMPLATE_ID
 ): Promise<void> {
   const res = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
     method: 'POST',
@@ -59,10 +58,10 @@ async function sendOtpEmail(
       template_id: templateId,
       user_id:     EMAILJS_PUBLIC_KEY,
       template_params: {
-        email:    toEmail,   // {{email}} trong template EmailJS
-        to_name:  toEmail,
-        subject:  subject,
-        otp:      otp,
+        email:   toEmail,
+        to_name: toEmail,
+        subject: subject,
+        otp:     otp,
       },
     }),
   });
@@ -94,41 +93,26 @@ export interface RegisterPayload {
   password: string;
 }
 
-/**
- * Bước 1:
- * 1. Tạo OTP
- * 2. EmailJS gửi email thật đến người dùng
- * 3. Backend lưu OTP để xác thực sau
- */
 export const registerSendOtp = async (payload: RegisterPayload): Promise<void> => {
   const otp = generateOtp();
   _localOtpStore[`register:${payload.email}`] = otp;
 
-  // Gửi email thật qua EmailJS
   await sendOtpEmail(payload.email, otp, 'Mã OTP xác thực đăng ký tài khoản EMR', EMAILJS_TEMPLATE_REGISTER);
 
-  // Gửi OTP lên backend để lưu (backend sẽ dùng để xác thực bước 2)
   await apiCall('/auth/register/save-otp', {
     method: 'POST',
     body: JSON.stringify({ email: payload.email, otp }),
   });
 
-  // Lưu tạm payload để dùng ở bước 2
   sessionStorage.setItem(`pending_reg:${payload.email}`, JSON.stringify(payload));
 };
 
-/**
- * Bước 2:
- * Frontend gửi OTP + thông tin đăng ký lên backend
- * Backend xác thực OTP và tạo tài khoản trong database
- */
 export const registerVerifyOtp = async (email: string, otp: string): Promise<void> => {
   const raw = sessionStorage.getItem(`pending_reg:${email}`);
   if (!raw) throw new Error('Không tìm thấy thông tin đăng ký. Vui lòng thử lại.');
 
   const payload: RegisterPayload = JSON.parse(raw);
 
-  // Backend xác thực OTP và tạo tài khoản
   await apiCall('/auth/register/verify-otp', {
     method: 'POST',
     body: JSON.stringify({
@@ -136,8 +120,8 @@ export const registerVerifyOtp = async (email: string, otp: string): Promise<voi
       idNumber:    payload.idNumber,
       email:       payload.email,
       phone:       payload.phone,
-      dateOfBirth: payload.dateOfBirth, 
-      gender:      payload.gender,      
+      dateOfBirth: payload.dateOfBirth,
+      gender:      payload.gender,
       password:    payload.password,
       otp:         otp,
     }),
@@ -149,9 +133,6 @@ export const registerVerifyOtp = async (email: string, otp: string): Promise<voi
 
 // ==================== QUÊN MẬT KHẨU ====================
 
-/**
- * Bước 1: Tạo OTP → EmailJS gửi email → backend lưu OTP
- */
 export const forgotPasswordSendOtp = async (emailOrPhone: string): Promise<void> => {
   const otp = generateOtp();
 
@@ -163,9 +144,6 @@ export const forgotPasswordSendOtp = async (emailOrPhone: string): Promise<void>
   });
 };
 
-/**
- * Bước 2: Xác thực OTP → backend trả về resetToken
- */
 export const forgotPasswordVerifyOtp = async (
   emailOrPhone: string,
   otp: string
@@ -176,9 +154,6 @@ export const forgotPasswordVerifyOtp = async (
   });
 };
 
-/**
- * Bước 3: Đặt mật khẩu mới trong database
- */
 export const resetPassword = async (resetToken: string, newPassword: string): Promise<void> => {
   await apiCall('/auth/reset-password', {
     method: 'POST',
@@ -189,13 +164,7 @@ export const resetPassword = async (resetToken: string, newPassword: string): Pr
 // ==================== USER MANAGEMENT (ADMIN) ====================
 
 export const addPatient = async (patientData: any) => {
-  const token = localStorage.getItem('token');
-  const response = await fetch('http://localhost:5041/api/patients', {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(patientData),
-  });
-  return response.json();
+  return apiCall('/patients', { method: 'POST', body: JSON.stringify(patientData) });
 };
 
 export const getUsers = async (search: string = '', page: number = 1, limit: number = 10) => {
@@ -204,46 +173,19 @@ export const getUsers = async (search: string = '', page: number = 1, limit: num
 };
 
 export const createUser = async (userData: any) => {
-  const response = await fetch('http://localhost:5041/api/users', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(userData),
-  });
-  return response.json();
+  return apiCall('/users', { method: 'POST', body: JSON.stringify(userData) });
 };
 
 export const updateUser = async (id: string, userData: any) => {
-  const response = await fetch(`http://localhost:5041/api/users/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(userData),
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || 'Cập nhật thất bại');
-  }
-  return response.json();
+  return apiCall(`/users/${id}`, { method: 'PUT', body: JSON.stringify(userData) });
 };
 
 export const toggleUserLock = async (id: string) => {
-  const response = await fetch(`http://localhost:5041/api/users/${id}/toggle-lock`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (!response.ok) throw new Error('Failed to toggle lock status');
-  return response.json();
+  return apiCall(`/users/${id}/toggle-lock`, { method: 'PUT' });
 };
 
 export const deleteUser = async (id: string) => {
-  const response = await fetch(`http://localhost:5041/api/users/${id}`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-  });
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(errorText || 'Xóa thất bại');
-  }
-  return response.json();
+  return apiCall(`/users/${id}`, { method: 'DELETE' });
 };
 
 // ==================== PATIENT RECORDS ====================
@@ -254,26 +196,14 @@ export const getPatients = async (search: string = '') => {
 };
 
 export const getPatientDetails = async (id: string) => {
-  const token = localStorage.getItem('token');
-  const response = await fetch(`http://localhost:5041/api/patients/${id}`, {
-    headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-  });
-  if (!response.ok) throw new Error('Không tìm thấy bệnh nhân');
-  return response.json();
+  return apiCall(`/patients/${id}`);
 };
 
 export const getPatientProfile = async () => {
   const userId = localStorage.getItem('userId') || localStorage.getItem('user_id') || '';
   if (!userId) throw new Error('Chưa đăng nhập. Không tìm thấy userId trong localStorage.');
 
-  const response = await fetch(`http://localhost:5041/api/patients/profile?userId=${userId}`, {
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => null);
-    throw new Error(err?.message || `Lỗi ${response.status}`);
-  }
-  const data = await response.json();
+  const data = await apiCall(`/patients/profile?userId=${userId}`);
   return {
     id: data.id,
     fullName: data.fullName,
@@ -291,44 +221,28 @@ export const getPatientProfile = async () => {
   };
 };
 
-// Thay hàm updatePatientProfile hiện tại trong api.ts bằng hàm này:
-
 export const updatePatientProfile = async (profileData: any) => {
   const userId = localStorage.getItem('userId') || '';
   if (!userId) throw new Error('Chưa đăng nhập.');
 
-  const response = await fetch(`http://localhost:5041/api/patients/by-user/${userId}`, {
+  return apiCall(`/patients/by-user/${userId}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      fullName:          profileData.fullName,
-      phone:             profileData.phone,
-      email:             profileData.email,
-      address:           profileData.address,
-      bloodType:         profileData.bloodType,
-      // array → comma-separated string để lưu DB
-      allergies:         Array.isArray(profileData.allergies)
-                           ? profileData.allergies.join(', ')
-                           : profileData.allergies,
-      chronicConditions: Array.isArray(profileData.chronicConditions)
-                           ? profileData.chronicConditions.join(', ')
-                           : profileData.chronicConditions,
-      currentMedications: Array.isArray(profileData.currentMedications)
-                           ? profileData.currentMedications.join(', ')
-                           : profileData.currentMedications,
+      fullName:           profileData.fullName,
+      phone:              profileData.phone,
+      email:              profileData.email,
+      address:            profileData.address,
+      bloodType:          profileData.bloodType,
+      allergies:          Array.isArray(profileData.allergies) ? profileData.allergies.join(', ') : profileData.allergies,
+      chronicConditions:  Array.isArray(profileData.chronicConditions) ? profileData.chronicConditions.join(', ') : profileData.chronicConditions,
+      currentMedications: Array.isArray(profileData.currentMedications) ? profileData.currentMedications.join(', ') : profileData.currentMedications,
     }),
   });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => null);
-    throw new Error(err?.message || 'Cập nhật thất bại');
-  }
-  return response.json();
 };
 
 // ==================== MEDICAL RECORDS ====================
 
-export const createMedicalRecord  = async (recordData: any) =>
+export const createMedicalRecord   = async (recordData: any) =>
   apiCall('/medical-records', { method: 'POST', body: JSON.stringify(recordData) });
 
 export const finalizeMedicalRecord = async (recordId: string) =>
@@ -356,7 +270,7 @@ export const aiDiagnosisSuggestion = async (symptoms: string, medicalHistory: an
 
 // ==================== PRESCRIPTIONS ====================
 
-export const createPrescription   = async (data: any) =>
+export const createPrescription    = async (data: any) =>
   apiCall('/prescriptions', { method: 'POST', body: JSON.stringify(data) });
 
 export const checkDrugInteractions = async (patientId: string, medicineIds: string[]) =>
