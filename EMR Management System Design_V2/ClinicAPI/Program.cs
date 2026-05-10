@@ -35,14 +35,9 @@ builder.Services.AddSwaggerGen(c => {
 
 // 4. CORS cho React frontend
 builder.Services.AddCors(options => options.AddPolicy("AllowReact",
-    p => p.WithOrigins(
-            "https://emr-404.netlify.app",
-            "http://localhost:5173",
-            "http://localhost:3000"
-        )
-        .AllowAnyMethod()
-        .AllowAnyHeader()
-        .AllowCredentials()));
+    p => p.AllowAnyOrigin()
+          .AllowAnyMethod()
+          .AllowAnyHeader()));
 
 var app = builder.Build();
 
