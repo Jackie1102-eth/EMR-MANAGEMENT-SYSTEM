@@ -51,7 +51,7 @@ namespace ClinicAPI.Controllers
         [HttpGet("today")]
         public async Task<ActionResult<object>> GetTodayCount()
         {
-            var today = DateTime.Today;
+            var today = DateTime.UtcNow.Date;
             var count = await _context.Appointments
                 .Where(a => a.AppointmentDate.Date == today)
                 .CountAsync();
@@ -185,6 +185,8 @@ if (patient == null)
             if (!DateTime.TryParse(date, out DateTime appointmentDate))
                 return BadRequest(new { message = "Ngày không hợp lệ." });
 
+            appointmentDate = DateTime.SpecifyKind(appointmentDate.Date, DateTimeKind.Utc);
+
             var allSlots = new List<string>();
             for (int h = 7; h <= 16; h++)
             {
@@ -217,9 +219,10 @@ if (patient == null)
             if (!Guid.TryParse(doctorId, out Guid doctorGuid))
                 return BadRequest(new { message = "doctorId không hợp lệ." });
 
-            if (!DateTime.TryParse(date, out DateTime appointmentDate))
-                return BadRequest(new { message = "date không hợp lệ." });
+        if (!DateTime.TryParse(date, out DateTime appointmentDate))
+            return BadRequest(new { message = "date không hợp lệ." });
 
+        appointmentDate = DateTime.SpecifyKind(appointmentDate.Date, DateTimeKind.Utc);
             var exists = await _context.Appointments.AnyAsync(a =>
                 a.DoctorId == doctorGuid &&
                 a.AppointmentDate.Date == appointmentDate.Date &&

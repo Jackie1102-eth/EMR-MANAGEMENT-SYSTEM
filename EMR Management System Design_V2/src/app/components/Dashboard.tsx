@@ -61,7 +61,7 @@ export function Dashboard({ language }: DashboardProps) {
 
 useEffect(() => {
   const loadDashboardData = async () => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('authToken'); // ← đúng key
     const headers = { 'Authorization': `Bearer ${token}` };
 
     try {
