@@ -220,7 +220,7 @@ export function MedicalRecordForm({ language, patientId }: MedicalRecordFormProp
     };
 
     try {
-      const response = await fetch('${import.meta.env.VITE_API_URL}/medicalrecords', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/medicalrecords`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(recordData)
